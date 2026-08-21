@@ -26,6 +26,7 @@ import {
 	mergeIdentityAssertions,
 	toDisplayOutcome,
 } from "~/server/signing/to-display-outcome";
+import { TRUSTED_CERTIFICATES } from "~/server/signing/trusted-certificates";
 
 interface ProfileDocument extends ProfileInput {
 	_id: ObjectId;
@@ -121,7 +122,7 @@ export const manifestRouter = createTRPCRouter({
 			let ingredients: ManifestIngredientRef[] = [];
 
 			try {
-				const outcome = await verifyAsset(format, bytes, []);
+				const outcome = await verifyAsset(format, bytes, TRUSTED_CERTIFICATES);
 				const manifest = outcome.manifests[0];
 				if (manifest) {
 					hasManifest = true;
@@ -178,7 +179,7 @@ export const manifestRouter = createTRPCRouter({
 
 			const bytes = Buffer.from(input.dataBase64, "base64");
 			try {
-				const outcome = await verifyAsset(format, bytes, []);
+				const outcome = await verifyAsset(format, bytes, TRUSTED_CERTIFICATES);
 
 				// verifyAsset() alone doesn't surface cawg.identity — it needs
 				// this separate call. An asset with no identity assertion at all
@@ -187,7 +188,7 @@ export const manifestRouter = createTRPCRouter({
 				const identityOutcome = await verifyIdentityAssertions(
 					format,
 					bytes,
-					[],
+					TRUSTED_CERTIFICATES,
 				).catch(() => null);
 
 				return {
@@ -299,7 +300,11 @@ export const manifestRouter = createTRPCRouter({
 
 			let manifestId: string | null = null;
 			try {
-				const outcome = await verifyAsset(format, result.signedAsset, []);
+				const outcome = await verifyAsset(
+					format,
+					result.signedAsset,
+					TRUSTED_CERTIFICATES,
+				);
 				manifestId = outcome.manifests[0]?.id ?? null;
 			} catch (error) {
 				console.warn(
