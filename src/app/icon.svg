@@ -1,8 +1,14 @@
-<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-	<rect width="32" height="32" fill="#170b1c" />
-	<rect x="3.3" y="17" width="3.4" height="9" rx="1.7" fill="#DD517F" />
-	<rect x="8.65" y="10" width="3.4" height="16" rx="1.7" fill="#E68E36" />
-	<rect x="14" y="13.5" width="3.4" height="12.5" rx="1.7" fill="#556DC8" />
-	<rect x="19.35" y="6.5" width="3.4" height="19.5" rx="1.7" fill="#7998EE" />
-	<rect x="24.7" y="15" width="3.4" height="11" rx="1.7" fill="#DD517F" />
+<svg
+	height="32"
+	viewBox="0 0 32 32"
+	width="32"
+	xmlns="http://www.w3.org/2000/svg"
+>
+	<title>Mix-O-Tron</title>
+	<rect fill="#170b1c" height="32" width="32" />
+	<rect fill="#DD517F" height="9" rx="1.7" width="3.4" x="3.3" y="17" />
+	<rect fill="#E68E36" height="16" rx="1.7" width="3.4" x="8.65" y="10" />
+	<rect fill="#556DC8" height="12.5" rx="1.7" width="3.4" x="14" y="13.5" />
+	<rect fill="#7998EE" height="19.5" rx="1.7" width="3.4" x="19.35" y="6.5" />
+	<rect fill="#DD517F" height="11" rx="1.7" width="3.4" x="24.7" y="15" />
 </svg>
