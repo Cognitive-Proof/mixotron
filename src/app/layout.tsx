@@ -11,7 +11,6 @@ export const metadata: Metadata = {
 	title: "Mix-O-Tron",
 	description:
 		"Mix-O-Tron is an open-source C2PA authoring tool for the music industry — create Content Credentials for original recordings, trace samples and remixes back to their sources, and carry licensing information with music as it moves into podcasts, video, and new works.",
-	icons: [{ rel: "icon", url: "/favicon.ico" }],
 };
 
 const unbounded = Unbounded({
