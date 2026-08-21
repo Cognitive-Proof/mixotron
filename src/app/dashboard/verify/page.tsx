@@ -3,6 +3,7 @@
 import { CAWGManifest } from "c2pa-react-cawg-component";
 import { C2paManifest } from "c2pa-react-component";
 import { type DragEvent, useRef, useState } from "react";
+import { CawgTrustRegistry } from "~/app/_components/cawg-trust-registry";
 import { fileToBase64 } from "~/lib/client-file";
 import type { VerifyForDisplayResult } from "~/lib/manifest";
 import { api } from "~/trpc/react";
@@ -65,12 +66,18 @@ export default function VerifyPage() {
 
 	return (
 		<>
+			<CawgTrustRegistry />
 			<div className="dash-header">
 				<div className="eyebrow">Verify</div>
 				<h1>Verify a Content Credential</h1>
 				<p>
 					Drop an audio file to check it for an embedded C2PA manifest and
 					inspect its full provenance chain.
+				</p>
+				<p className="verify-honesty-note">
+					Identity and trust-registry checks shown here are Mix-O-Tron's own
+					local test infrastructure, not a real identity-verification or TRQP
+					service — see each credential's identity section for details.
 				</p>
 			</div>
 

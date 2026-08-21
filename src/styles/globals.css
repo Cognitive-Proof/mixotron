@@ -1346,6 +1346,11 @@ footer {
 	color: var(--ink-soft);
 	max-width: 56ch;
 }
+.dash-header .verify-honesty-note {
+	font-family: var(--font-mono), monospace;
+	font-size: 0.72rem;
+	max-width: 62ch;
+}
 .dash-header--row {
 	display: flex;
 	align-items: flex-end;

@@ -230,7 +230,9 @@ export function ProfileForm({
 					<div className="field">
 						<span className="identity-legend">Verified identities</span>
 						<span className="field-hint">
-							Self-declared for now — not yet verified by an identity provider.
+							Self-declared, not verified by an identity provider. Signed into
+							Content Credentials as a self-attestation from Mix-O-Tron — not as
+							a claim any outside party has checked.
 						</span>
 						<div className="identity-list">
 							{values.verifiedIdentities.map((entry) => {

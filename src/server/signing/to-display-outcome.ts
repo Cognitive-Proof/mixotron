@@ -4,9 +4,49 @@ import type {
 	ManifestEntry,
 } from "c2pa-react-component-types";
 import type {
+	IdentityAssertionVerificationOutcome,
 	VerificationOutcome as LibraryOutcome,
 	RecognizedManifest,
 } from "c2pa-rs-javascript-library";
+
+/**
+ * verifyAsset() alone doesn't decode cawg.identity — that needs a separate
+ * verifyIdentityAssertions() call. This splices its result into each
+ * manifest's assertions under the "cawg.identity" key, in the flat
+ * {issuer, signer_payload, verifiedIdentities} shape
+ * c2pa-react-cawg-component actually reads (manifest.assertions['cawg.identity'].issuer
+ * etc.), rather than the {label, validated, data} wrapper
+ * verifyIdentityAssertions() itself returns.
+ */
+export function mergeIdentityAssertions(
+	outcome: LibraryOutcome,
+	identityOutcome: IdentityAssertionVerificationOutcome | null,
+): LibraryOutcome {
+	if (!identityOutcome) return outcome;
+
+	return {
+		...outcome,
+		manifests: outcome.manifests.map((manifest) => {
+			const records = identityOutcome.manifests[manifest.id];
+			const identityRecord = records?.find(
+				(record) => record.label === "cawg.identity",
+			);
+			if (!identityRecord) return manifest;
+
+			const assertions = manifest.assertions as unknown as Record<
+				string,
+				unknown
+			>;
+			return {
+				...manifest,
+				assertions: {
+					...assertions,
+					"cawg.identity": identityRecord.data,
+				} as unknown as RecognizedManifest["assertions"],
+			};
+		}),
+	};
+}
 
 /**
  * c2pa-rs-javascript-library's VerificationOutcome and

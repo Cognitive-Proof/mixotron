@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { TRPCError } from "@trpc/server";
-import { verifyAsset } from "c2pa-rs-javascript-library";
+import {
+	verifyAsset,
+	verifyIdentityAssertions,
+} from "c2pa-rs-javascript-library";
 import { ObjectId } from "mongodb";
 import { z } from "zod";
 
@@ -14,9 +17,15 @@ import {
 import type { Profile, ProfileInput } from "~/lib/profile";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { mongoDb } from "~/server/db/mongo";
-import { buildManifestDefinition } from "~/server/signing/manifest-definition";
+import {
+	buildIcaVerifiedIdentities,
+	buildManifestDefinition,
+} from "~/server/signing/manifest-definition";
 import { signContentCredential } from "~/server/signing/sign";
-import { toDisplayOutcome } from "~/server/signing/to-display-outcome";
+import {
+	mergeIdentityAssertions,
+	toDisplayOutcome,
+} from "~/server/signing/to-display-outcome";
 
 interface ProfileDocument extends ProfileInput {
 	_id: ObjectId;
@@ -170,11 +179,24 @@ export const manifestRouter = createTRPCRouter({
 			const bytes = Buffer.from(input.dataBase64, "base64");
 			try {
 				const outcome = await verifyAsset(format, bytes, []);
+
+				// verifyAsset() alone doesn't surface cawg.identity — it needs
+				// this separate call. An asset with no identity assertion at all
+				// is expected (most are), so a failure here just means "no
+				// identity data to merge in", not a verification failure.
+				const identityOutcome = await verifyIdentityAssertions(
+					format,
+					bytes,
+					[],
+				).catch(() => null);
+
 				return {
 					supported: true,
 					fileName: input.fileName,
 					format,
-					outcome: toDisplayOutcome(outcome),
+					outcome: toDisplayOutcome(
+						mergeIdentityAssertions(outcome, identityOutcome),
+					),
 				};
 			} catch (error) {
 				throw new TRPCError({
@@ -258,11 +280,21 @@ export const manifestRouter = createTRPCRouter({
 				profile,
 			});
 
+			const roles =
+				profile.defaultRoles.length > 0
+					? profile.defaultRoles
+					: (["cawg.creator"] as const);
+			const verifiedAt = new Date().toISOString();
+
 			const result = await signContentCredential({
 				format,
 				asset: Buffer.from(input.dataBase64, "base64"),
 				manifestDefinition,
 				ingredients: includedIngredients,
+				identity: {
+					roles: [...roles],
+					verifiedIdentities: buildIcaVerifiedIdentities(profile, verifiedAt),
+				},
 			});
 
 			let manifestId: string | null = null;

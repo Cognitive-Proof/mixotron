@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+	computeIcaIssuerDid,
+	type IcaVerifiedIdentity,
 	type IngredientDescriptor,
 	type SigningAlg,
 	signAsset,
@@ -16,11 +18,25 @@ export interface SignIngredientInput {
 	relationship: "parentOf" | "componentOf" | "inputTo";
 }
 
+export interface SignIdentityInput {
+	verifiedIdentities: IcaVerifiedIdentity[];
+	roles: string[];
+}
+
 export interface SignRequest {
 	format: SupportedVerifyFormat;
 	asset: Uint8Array;
 	manifestDefinition: Record<string, unknown>;
 	ingredients: SignIngredientInput[];
+	/**
+	 * cawg.identity via the ICA path. Only takes effect when `ingredients` is
+	 * empty — c2pa-rs-javascript-library's signAssetWithIngredients doesn't
+	 * accept ICA options at all (checked its .d.ts: no issuerDid/
+	 * verifiedIdentities/icaOptions params), only the plain signAsset does.
+	 * So a signed asset with ingredients never gets a cawg.identity assertion
+	 * today — a library limitation, not a choice made here.
+	 */
+	identity: SignIdentityInput | null;
 }
 
 export interface SignResult {
@@ -30,6 +46,11 @@ export interface SignResult {
 
 const TEST_CERTS_DIR = join(process.cwd(), "src/server/signing/test-certs");
 const TEST_SIGNING_ALG: SigningAlg = "es256";
+
+const ICA_ISSUER_PRIVATE_KEY = new Uint8Array(
+	readFileSync(join(TEST_CERTS_DIR, "ica_issuer_ed25519.seed")),
+);
+const ICA_ISSUER_DID = computeIcaIssuerDid(ICA_ISSUER_PRIVATE_KEY);
 
 /**
  * Signs a C2PA manifest onto an asset.
@@ -73,6 +94,19 @@ async function signViaLocalTestCerts(
 	);
 
 	if (request.ingredients.length === 0) {
+		const identityFields = request.identity
+			? {
+					issuerDid: ICA_ISSUER_DID,
+					issuerPrivateKey: ICA_ISSUER_PRIVATE_KEY,
+					verifiedIdentities: request.identity.verifiedIdentities,
+					icaOptions: {
+						sigType: "cawg.identity_claims_aggregation",
+						reserveSize: 8192,
+						roles: request.identity.roles,
+					},
+				}
+			: {};
+
 		const result = await signAsset({
 			format: request.format,
 			asset: request.asset,
@@ -80,6 +114,7 @@ async function signViaLocalTestCerts(
 			signcert,
 			pkey,
 			alg: TEST_SIGNING_ALG,
+			...identityFields,
 		});
 		return { signedAsset: result.signedAsset, manifest: result.manifest };
 	}

@@ -1,5 +1,13 @@
-import { addCawgMetadataAssertion } from "c2pa-rs-javascript-library";
-import { type Profile, TRAINING_CATEGORIES } from "~/lib/profile";
+import {
+	addCawgMetadataAssertion,
+	type IcaVerifiedIdentity,
+} from "c2pa-rs-javascript-library";
+import {
+	type Profile,
+	TRAINING_CATEGORIES,
+	type VerifiedIdentityEntry,
+} from "~/lib/profile";
+import { MIXOTRON_TRUST_AUTHORITY_ID } from "~/lib/trust-registry";
 
 export interface AiDisclosureInput {
 	modelType: string;
@@ -90,6 +98,69 @@ function buildTrainingMiningAssertion(
 			: { use: preference.use };
 	}
 	return { entries };
+}
+
+/**
+ * Maps a profile's self-declared "verified identities" to the shape
+ * c2pa-rs-javascript-library's ICA signing path expects.
+ *
+ * Important: `IcaVerifiedIdentity.provider` means the aggregator that
+ * independently verified the claim — not the platform the identity lives
+ * on. Mixotron never verifies anything a user types into the profile form,
+ * so `provider` is always mixotron itself (self-attestation), never the
+ * user-entered platform/organization name. That name goes into `name` /
+ * `username` instead, where it belongs.
+ */
+export function buildIcaVerifiedIdentities(
+	profile: Profile,
+	verifiedAt: string,
+): IcaVerifiedIdentity[] {
+	const provider = {
+		id: MIXOTRON_TRUST_AUTHORITY_ID,
+		name: "Mix-O-Tron (self-attested, not independently verified)",
+	};
+
+	return profile.verifiedIdentities.map(
+		(entry: VerifiedIdentityEntry): IcaVerifiedIdentity => {
+			const base = { verifiedAt, provider };
+			switch (entry.type) {
+				case "cawg.web_site":
+					return {
+						...base,
+						type: entry.type,
+						name: entry.provider,
+						uri: entry.value,
+					};
+				case "cawg.social_media":
+					return {
+						...base,
+						type: entry.type,
+						name: entry.provider,
+						username: entry.value,
+					};
+				case "cawg.affiliation":
+					return {
+						...base,
+						type: entry.type,
+						name: entry.provider,
+						uri: entry.value,
+					};
+				case "cawg.crypto_wallet":
+					return {
+						...base,
+						type: entry.type,
+						name: entry.provider,
+						address: entry.value,
+					};
+				case "cawg.document_verification":
+					return { ...base, type: entry.type, name: entry.value };
+				default: {
+					const exhaustive: never = entry.type;
+					throw new Error(`Unhandled verified identity type: ${exhaustive}`);
+				}
+			}
+		},
+	);
 }
 
 /**
