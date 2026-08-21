@@ -16,6 +16,11 @@ jobs:
         with:
           node-version: 20
           cache: "npm"
+      # Node 20's bundled npm 10 hard-errors on an optional peer conflict
+      # (better-call wants zod ^4, the project pins zod ^3) that npm 11 —
+      # the version pinned in package.json's "packageManager" — resolves
+      # without complaint.
+      - run: npm install -g npm@11.12.1
       - run: npm ci
       - run: npm run typecheck
         env:
