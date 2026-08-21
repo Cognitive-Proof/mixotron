@@ -127,7 +127,7 @@ export function defaultTrainingPreferences(): TrainingPreferences {
 	return Object.fromEntries(
 		TRAINING_CATEGORIES.map((category) => [
 			category,
-			{ use: "notAllowed", constraintInfo: "" } satisfies TrainingPreference,
+			{ use: "allowed", constraintInfo: "" } satisfies TrainingPreference,
 		]),
 	) as TrainingPreferences;
 }
