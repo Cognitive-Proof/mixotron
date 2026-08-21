@@ -44,3 +44,7 @@ yarn-error.log*
 
 # idea files
 .idea
+
+# yalc — local package links for testing unpublished changes, never committed
+.yalc
+yalc.lock
