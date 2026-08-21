@@ -9,6 +9,7 @@ const NAV_LINKS = [
 	{ href: "/dashboard/profile", label: "Profiles" },
 	{ href: "/dashboard/author", label: "Author" },
 	{ href: "/dashboard/verify", label: "Verify" },
+	{ href: "/dashboard/link", label: "Link" },
 ];
 
 export function DashboardShell({

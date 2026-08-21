@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { type DragEvent, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { type DragEvent, useEffect, useRef, useState } from "react";
 import {
 	ACTIONS,
 	CREATION_ORIGINS,
@@ -13,7 +14,7 @@ import {
 	type IngredientRelationship,
 	type OptionInfo,
 } from "~/app/dashboard/author/_lib/c2pa";
-import { fileToBase64 } from "~/lib/client-file";
+import { base64ToFile, fileToBase64 } from "~/lib/client-file";
 import {
 	detectVerifyFormat,
 	type ManifestVerificationResult,
@@ -96,6 +97,23 @@ export default function AuthorPage() {
 	const [finishedFile, setFinishedFile] = useState<File | null>(null);
 	const [finishedActive, setFinishedActive] = useState(false);
 	const finishedInputRef = useRef<HTMLInputElement>(null);
+
+	// ?linkUpload=<id> arrives from the Link upload landing page — pulls the
+	// file a tool like Audacity uploaded back down into the browser so it
+	// behaves exactly as if the user had picked it themselves.
+	const linkUploadId = useSearchParams().get("linkUpload");
+	const linkUpload = api.link.downloadUpload.useQuery(
+		{ uploadId: linkUploadId ?? "" },
+		{ enabled: Boolean(linkUploadId) },
+	);
+	const [linkUploadApplied, setLinkUploadApplied] = useState(false);
+	useEffect(() => {
+		if (!linkUpload.data || linkUploadApplied) return;
+		const { name, fileName, contentType, dataBase64 } = linkUpload.data;
+		setFinishedFile(base64ToFile(dataBase64, fileName, contentType));
+		setTitle((current) => current || name);
+		setLinkUploadApplied(true);
+	}, [linkUpload.data, linkUploadApplied]);
 
 	const [ingredients, setIngredients] = useState<IngredientFile[]>([]);
 	const [ingredientsActive, setIngredientsActive] = useState(false);

@@ -48,3 +48,6 @@ yarn-error.log*
 # yalc — local package links for testing unpublished changes, never committed
 .yalc
 yalc.lock
+
+# local filesystem fallback for /api/link/upload when MIX_O_TRON_UPLOAD_BUCKET is unset
+/.uploads

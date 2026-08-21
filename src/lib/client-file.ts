@@ -9,3 +9,19 @@ export async function fileToBase64(file: File): Promise<string> {
 	}
 	return btoa(binary);
 }
+
+/** Browser-only. The reverse of fileToBase64 — rebuilds a File from a
+ * server-supplied base64 payload (e.g. downloading a Link upload back into
+ * the Author page as though the user had picked it themselves). */
+export function base64ToFile(
+	base64: string,
+	fileName: string,
+	contentType: string,
+): File {
+	const binary = atob(base64);
+	const bytes = new Uint8Array(binary.length);
+	for (let i = 0; i < binary.length; i++) {
+		bytes[i] = binary.charCodeAt(i);
+	}
+	return new File([bytes], fileName, { type: contentType });
+}

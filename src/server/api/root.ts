@@ -1,3 +1,4 @@
+import { linkRouter } from "~/server/api/routers/link";
 import { manifestRouter } from "~/server/api/routers/manifest";
 import { postRouter } from "~/server/api/routers/post";
 import { profileRouter } from "~/server/api/routers/profile";
@@ -12,6 +13,7 @@ export const appRouter = createTRPCRouter({
 	post: postRouter,
 	profile: profileRouter,
 	manifest: manifestRouter,
+	link: linkRouter,
 });
 
 // export type definition of API

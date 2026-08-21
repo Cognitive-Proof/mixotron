@@ -27,6 +27,19 @@ export const env = createEnv({
 		// signing falls back to c2pa-rs-javascript-library with local test certs.
 		SIGN_O_TRON_URL: z.string().optional(),
 		SIGN_O_TRON_API_KEY: z.string().optional(),
+		// Signs/verifies Link tokens (the bearer tokens external tools like
+		// Audacity use to call POST /api/link/upload). Separate from
+		// BETTER_AUTH_SECRET on purpose — a leaked upload token shouldn't be
+		// usable to forge a browser session or vice versa.
+		LINK_TOKEN_SECRET:
+			process.env.NODE_ENV === "production"
+				? z.string()
+				: z.string().optional(),
+		// GCS bucket name for storing files uploaded via /api/link/upload. When
+		// unset, uploads are written to the local filesystem instead — fine for
+		// dev, but Cloud Run's filesystem is ephemeral, so this must be set in
+		// production or uploaded files disappear on the next deploy/restart.
+		MIX_O_TRON_UPLOAD_BUCKET: z.string().optional(),
 		NODE_ENV: z
 			.enum(["development", "test", "production"])
 			.default("development"),
@@ -54,6 +67,8 @@ export const env = createEnv({
 		MIX_O_TRON_MONGODB_URI: process.env.MIX_O_TRON_MONGODB_URI,
 		SIGN_O_TRON_URL: process.env.SIGN_O_TRON_URL,
 		SIGN_O_TRON_API_KEY: process.env.SIGN_O_TRON_API_KEY,
+		LINK_TOKEN_SECRET: process.env.LINK_TOKEN_SECRET,
+		MIX_O_TRON_UPLOAD_BUCKET: process.env.MIX_O_TRON_UPLOAD_BUCKET,
 		NODE_ENV: process.env.NODE_ENV,
 		// NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
 	},
