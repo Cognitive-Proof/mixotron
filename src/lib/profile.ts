@@ -148,9 +148,26 @@ export const profileInputSchema = z.object({
 });
 export type ProfileInput = z.infer<typeof profileInputSchema>;
 
+/**
+ * A WebAuthn credential registered for this profile's client-side CAWG
+ * identity signing (see src/lib/cawg-webauthn.ts). The Ed25519 private key
+ * itself is never stored anywhere — only what's needed to re-derive it from
+ * the authenticator (credentialId, prfSalt) and the DID that key derives
+ * to. Set only via profile.registerWebAuthnCredential, never through the
+ * general create/update profile form, so a routine profile edit can't
+ * accidentally clobber it.
+ */
+export const webauthnCredentialSchema = z.object({
+	credentialId: z.string().min(1),
+	prfSalt: z.string().min(1),
+	issuerDid: z.string().min(1),
+});
+export type WebauthnCredential = z.infer<typeof webauthnCredentialSchema>;
+
 export interface Profile extends ProfileInput {
 	id: string;
 	userId: string;
 	createdAt: Date;
 	updatedAt: Date;
+	webauthnCredential: WebauthnCredential | null;
 }

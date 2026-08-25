@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ProfileForm } from "~/app/dashboard/_components/profile-form";
+import { WebauthnIdentityCard } from "~/app/dashboard/_components/webauthn-identity-card";
 import { api } from "~/trpc/react";
 
 export default function EditProfilePage() {
@@ -57,6 +58,8 @@ export default function EditProfilePage() {
 				}
 				submitLabel={updateProfile.isPending ? "Saving…" : "Save changes"}
 			/>
+
+			<WebauthnIdentityCard profile={profile} />
 		</>
 	);
 }

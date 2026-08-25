@@ -14,7 +14,7 @@ import {
 	type VerifyForDisplayResult,
 	verifyInputSchema,
 } from "~/lib/manifest";
-import type { Profile, ProfileInput } from "~/lib/profile";
+import type { Profile, ProfileInput, WebauthnCredential } from "~/lib/profile";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { mongoDb } from "~/server/db/mongo";
 import {
@@ -33,6 +33,10 @@ interface ProfileDocument extends ProfileInput {
 	userId: string;
 	createdAt: Date;
 	updatedAt: Date;
+	// See the identical comment on profile.ts's ProfileDocument — optional
+	// here because profiles created before this field existed have no such
+	// key in Mongo; defaulted to null below.
+	webauthnCredential?: WebauthnCredential | null;
 }
 
 async function getOwnedProfile(userId: string, id: string): Promise<Profile> {
@@ -49,7 +53,7 @@ async function getOwnedProfile(userId: string, id: string): Promise<Profile> {
 		throw new TRPCError({ code: "NOT_FOUND", message: "Profile not found" });
 	}
 	const { _id, ...rest } = doc;
-	return { id: _id.toString(), ...rest };
+	return { id: _id.toString(), webauthnCredential: null, ...rest };
 }
 
 interface VerifiedManifestDocument {
