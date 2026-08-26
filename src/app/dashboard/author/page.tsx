@@ -13,7 +13,13 @@ import {
 	type IngredientRelationship,
 	type OptionInfo,
 } from "~/app/dashboard/author/_lib/c2pa";
-import { base64ToFile, fileToBase64 } from "~/lib/client-file";
+import { signIcaToSign } from "~/lib/cawg-webauthn";
+import {
+	base64ToBytes,
+	base64ToFile,
+	bytesToBase64,
+	fileToBase64,
+} from "~/lib/client-file";
 import {
 	detectVerifyFormat,
 	type ManifestVerificationResult,
@@ -74,6 +80,8 @@ export default function AuthorPage() {
 	const profiles = data ?? [];
 	const verifyManifest = api.manifest.verify.useMutation();
 	const produceManifest = api.manifest.produce.useMutation();
+	const prepareIcaSigning = api.manifest.prepareIcaSigning.useMutation();
+	const finalizeIcaSigning = api.manifest.finalizeIcaSigning.useMutation();
 
 	const [profileId, setProfileId] = useState("");
 	const [title, setTitle] = useState("");
@@ -136,6 +144,13 @@ export default function AuthorPage() {
 		digitalSourceTypeInvolvesAI(digitalSourceType);
 	const hasParentIngredient = ingredients.some(
 		(i) => i.relationship === "parentOf",
+	);
+	// The ICA (device-key) signing path can't carry ingredients — same
+	// limitation as the shared-test-key identity path (see sign.ts) — so a
+	// release with ingredients always falls back to the server test key for
+	// its identity assertion, same as a profile with no device key at all.
+	const useWebAuthnSigning = Boolean(
+		selectedProfile?.webauthnCredential && ingredients.length === 0,
 	);
 	const finishedFormatSupported = finishedFile
 		? Boolean(detectVerifyFormat(finishedFile.name))
@@ -226,6 +241,51 @@ export default function AuthorPage() {
 		setProduceError(null);
 		try {
 			const dataBase64 = await fileToBase64(finishedFile);
+			const aiDisclosure = showAiDisclosure
+				? {
+						modelType: aiModelType,
+						modelName: aiModelName,
+						modelIdentifier: aiModelIdentifier,
+						humanOversightLevel: aiHumanOversight,
+					}
+				: null;
+
+			if (useWebAuthnSigning && selectedProfile?.webauthnCredential) {
+				const prepared = await prepareIcaSigning.mutateAsync({
+					fileName: finishedFile.name,
+					dataBase64,
+					profileId: selectedProfile.id,
+					title,
+					description,
+					creationOrigin,
+					digitalSourceType,
+					actions: selectedActions,
+					aiDisclosure,
+				});
+
+				// Prompts the user's authenticator (Touch ID / Windows Hello /
+				// security key) — this tap is their consent to sign. The private
+				// key it derives never leaves the browser.
+				const signature = await signIcaToSign(
+					selectedProfile.webauthnCredential,
+					base64ToBytes(prepared.toSignBase64),
+				);
+
+				const finalized = await finalizeIcaSigning.mutateAsync({
+					sessionId: prepared.sessionId,
+					signatureBase64: bytesToBase64(signature),
+				});
+
+				setSignedResult({
+					base64: finalized.signedAssetBase64,
+					fileName: finalized.fileName,
+					manifestId: finalized.manifestId,
+					skippedIngredients: [],
+				});
+				setStatus("produced");
+				return;
+			}
+
 			const ingredientPayloads = await Promise.all(
 				ingredients.map(async (ingredient) => ({
 					fileName: ingredient.file.name,
@@ -243,14 +303,7 @@ export default function AuthorPage() {
 				creationOrigin,
 				digitalSourceType,
 				actions: selectedActions,
-				aiDisclosure: showAiDisclosure
-					? {
-							modelType: aiModelType,
-							modelName: aiModelName,
-							modelIdentifier: aiModelIdentifier,
-							humanOversightLevel: aiHumanOversight,
-						}
-					: null,
+				aiDisclosure,
 				ingredients: ingredientPayloads,
 			});
 
@@ -433,6 +486,19 @@ export default function AuthorPage() {
 								assertion will be included — just a plain C2PA manifest.
 							</span>
 						)}
+						{selectedProfile?.webauthnCredential &&
+							(useWebAuthnSigning ? (
+								<span className="field-hint">
+									This profile's identity claim will be signed with your
+									connected device key — you'll be prompted to confirm.
+								</span>
+							) : (
+								<span className="field-hint">
+									This profile has a device key connected, but it can't be used
+									alongside ingredients yet — the identity claim will be signed
+									with Mix-O-Tron's shared test key instead.
+								</span>
+							))}
 					</div>
 
 					<div className="field">

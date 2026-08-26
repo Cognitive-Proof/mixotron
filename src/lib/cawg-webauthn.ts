@@ -186,6 +186,21 @@ export async function deriveSigningSeed(
 	return deriveEd25519Seed(prfResult);
 }
 
+/**
+ * Signs the `toSign` bytes from manifest.prepareIcaSigning with this
+ * profile's device-derived Ed25519 key. Prompts the user's authenticator
+ * (the same PRF-derivation prompt as deriveSigningSeed) — that prompt is the
+ * user's consent to sign. Returns a 64-byte raw (RFC 8032, R||S) signature,
+ * exactly what manifest.finalizeIcaSigning expects.
+ */
+export async function signIcaToSign(
+	credential: WebAuthnPrfCredential,
+	toSign: Uint8Array,
+): Promise<Uint8Array> {
+	const seed = await deriveSigningSeed(credential);
+	return ed25519.sign(toSign, seed);
+}
+
 async function evaluatePrf(
 	credentialId: string,
 	salt: Uint8Array<ArrayBuffer>,
