@@ -244,7 +244,10 @@ export const manifestRouter = createTRPCRouter({
 			z.object({
 				fileName: z.string().min(1),
 				dataBase64: z.string().min(1),
-				profileId: z.string().min(1),
+				// Null selects "No profile — skip CAWG": every CAWG-specific
+				// assertion (attribution, training-mining, identity) is omitted,
+				// leaving a plain C2PA manifest.
+				profileId: z.string().min(1).nullable(),
 				title: z.string().min(1),
 				description: z.string(),
 				creationOrigin: z.enum(["created", "opened"]),
@@ -269,10 +272,9 @@ export const manifestRouter = createTRPCRouter({
 				});
 			}
 
-			const profile = await getOwnedProfile(
-				ctx.session.user.id,
-				input.profileId,
-			);
+			const profile = input.profileId
+				? await getOwnedProfile(ctx.session.user.id, input.profileId)
+				: null;
 
 			const includedIngredients: {
 				format: typeof format;
@@ -305,10 +307,6 @@ export const manifestRouter = createTRPCRouter({
 				profile,
 			});
 
-			const roles =
-				profile.defaultRoles.length > 0
-					? profile.defaultRoles
-					: (["cawg.creator"] as const);
 			const verifiedAt = new Date().toISOString();
 
 			const result = await signContentCredential({
@@ -316,10 +314,19 @@ export const manifestRouter = createTRPCRouter({
 				asset: Buffer.from(input.dataBase64, "base64"),
 				manifestDefinition,
 				ingredients: includedIngredients,
-				identity: {
-					roles: [...roles],
-					verifiedIdentities: buildIcaVerifiedIdentities(profile, verifiedAt),
-				},
+				identity: profile
+					? {
+							roles: [
+								...(profile.defaultRoles.length > 0
+									? profile.defaultRoles
+									: (["cawg.creator"] as const)),
+							],
+							verifiedIdentities: buildIcaVerifiedIdentities(
+								profile,
+								verifiedAt,
+							),
+						}
+					: null,
 			});
 
 			let manifestId: string | null = null;

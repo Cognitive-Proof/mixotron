@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { type DragEvent, useEffect, useRef, useState } from "react";
 import {
@@ -22,6 +21,7 @@ import {
 import { api } from "~/trpc/react";
 
 const MAX_INGREDIENTS = 20;
+const NO_PROFILE_VALUE = "__none__";
 
 type VerificationState = "checking" | ManifestVerificationResult;
 
@@ -70,9 +70,8 @@ function verificationSummary(state: VerificationState): string {
 }
 
 export default function AuthorPage() {
-	const { data, isPending } = api.profile.list.useQuery();
+	const { data } = api.profile.list.useQuery();
 	const profiles = data ?? [];
-	const isReady = !isPending;
 	const verifyManifest = api.manifest.verify.useMutation();
 	const produceManifest = api.manifest.produce.useMutation();
 
@@ -131,6 +130,7 @@ export default function AuthorPage() {
 	} | null>(null);
 
 	const selectedProfile = profiles.find((p) => p.id === profileId);
+	const noProfileSelected = profileId === NO_PROFILE_VALUE;
 	const showAiDisclosure =
 		creationOrigin === "created" &&
 		digitalSourceTypeInvolvesAI(digitalSourceType);
@@ -237,7 +237,7 @@ export default function AuthorPage() {
 			const result = await produceManifest.mutateAsync({
 				fileName: finishedFile.name,
 				dataBase64,
-				profileId,
+				profileId: noProfileSelected ? null : profileId,
 				title,
 				description,
 				creationOrigin,
@@ -303,24 +303,6 @@ export default function AuthorPage() {
 		setSignedResult(null);
 	}
 
-	if (isReady && profiles.length === 0) {
-		return (
-			<>
-				<div className="dash-header">
-					<div className="eyebrow">Author</div>
-					<h1>You need a profile first</h1>
-					<p>Create a creator profile before authoring a release.</p>
-				</div>
-				<Link
-					className="btn btn-primary"
-					href="/dashboard/profile/createProfile"
-				>
-					Create a profile
-				</Link>
-			</>
-		);
-	}
-
 	if (status === "produced" && signedResult) {
 		return (
 			<>
@@ -340,7 +322,11 @@ export default function AuthorPage() {
 						<dt>Title</dt>
 						<dd>{title}</dd>
 						<dt>Profile</dt>
-						<dd>{selectedProfile?.displayName}</dd>
+						<dd>
+							{noProfileSelected
+								? "None — CAWG skipped"
+								: selectedProfile?.displayName}
+						</dd>
 						<dt>Origin</dt>
 						<dd>{labelFor(CREATION_ORIGINS, creationOrigin)}</dd>
 						{creationOrigin === "created" && (
@@ -434,12 +420,19 @@ export default function AuthorPage() {
 							value={profileId}
 						>
 							<option value="">Select a profile…</option>
+							<option value={NO_PROFILE_VALUE}>No profile — skip CAWG</option>
 							{profiles.map((profile) => (
 								<option key={profile.id} value={profile.id}>
 									{profile.displayName || "Untitled"}
 								</option>
 							))}
 						</select>
+						{noProfileSelected && (
+							<span className="field-hint">
+								No creator attribution, training-mining preferences, or identity
+								assertion will be included — just a plain C2PA manifest.
+							</span>
+						)}
 					</div>
 
 					<div className="field">
