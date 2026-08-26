@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import {
+	finalizeIcaIdentityAssertion,
+	prepareIcaIdentityAssertion,
 	verifyAsset,
 	verifyIdentityAssertions,
 } from "c2pa-rs-javascript-library";
@@ -18,15 +20,32 @@ import type { Profile, ProfileInput, WebauthnCredential } from "~/lib/profile";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { mongoDb } from "~/server/db/mongo";
 import {
+	createIcaSigningSession,
+	deleteIcaSigningSession,
+	getIcaSigningSession,
+} from "~/server/signing/ica-signing-sessions";
+import {
 	buildIcaVerifiedIdentities,
 	buildManifestDefinition,
 } from "~/server/signing/manifest-definition";
-import { signContentCredential } from "~/server/signing/sign";
+import {
+	loadTestSigningCerts,
+	signContentCredential,
+} from "~/server/signing/sign";
 import {
 	mergeIdentityAssertions,
 	toDisplayOutcome,
 } from "~/server/signing/to-display-outcome";
 import { getTrustedCertificates } from "~/server/signing/trusted-certificates";
+
+const aiDisclosureInputSchema = z
+	.object({
+		modelType: z.string(),
+		modelName: z.string(),
+		modelIdentifier: z.string(),
+		humanOversightLevel: z.string(),
+	})
+	.nullable();
 
 interface ProfileDocument extends ProfileInput {
 	_id: ObjectId;
@@ -231,14 +250,7 @@ export const manifestRouter = createTRPCRouter({
 				creationOrigin: z.enum(["created", "opened"]),
 				digitalSourceType: z.string(),
 				actions: z.array(z.string()),
-				aiDisclosure: z
-					.object({
-						modelType: z.string(),
-						modelName: z.string(),
-						modelIdentifier: z.string(),
-						humanOversightLevel: z.string(),
-					})
-					.nullable(),
+				aiDisclosure: aiDisclosureInputSchema,
 				ingredients: z.array(
 					z.object({
 						fileName: z.string().min(1),
@@ -330,6 +342,160 @@ export const manifestRouter = createTRPCRouter({
 				fileName: `signed-${input.fileName}`,
 				manifestId,
 				skippedIngredients,
+			};
+		}),
+
+	/**
+	 * Two-step ICA (WebAuthn device key) identity signing — prepare phase.
+	 *
+	 * Builds the manifest and signs the outer C2PA claim with the shared
+	 * ES256 test key (same as `produce`), but leaves the cawg.identity
+	 * credential unsigned. The returned `toSign` bytes must be signed with
+	 * the profile's device-derived Ed25519 key in the browser; the rest of
+	 * the prepared state (which embeds the ES256 private key and full asset
+	 * bytes) is kept server-side in `icaSigningSessions` and is never
+	 * returned here. No ingredients: prepareIcaIdentityAssertion doesn't
+	 * accept them, matching the existing produce()/signAsset limitation.
+	 */
+	prepareIcaSigning: protectedProcedure
+		.input(
+			z.object({
+				fileName: z.string().min(1),
+				dataBase64: z.string().min(1),
+				profileId: z.string().min(1),
+				title: z.string().min(1),
+				description: z.string(),
+				creationOrigin: z.enum(["created", "opened"]),
+				digitalSourceType: z.string(),
+				actions: z.array(z.string()),
+				aiDisclosure: aiDisclosureInputSchema,
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const format = detectVerifyFormat(input.fileName);
+			if (!format) {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: `"${input.fileName}" isn't a format the signing library supports yet.`,
+				});
+			}
+
+			const profile = await getOwnedProfile(
+				ctx.session.user.id,
+				input.profileId,
+			);
+			if (!profile.webauthnCredential) {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: "This profile doesn't have a device identity key connected.",
+				});
+			}
+
+			const manifestDefinition = buildManifestDefinition({
+				title: input.title,
+				description: input.description,
+				creationOrigin: input.creationOrigin,
+				digitalSourceType: input.digitalSourceType,
+				actions: input.actions,
+				aiDisclosure: input.aiDisclosure,
+				profile,
+			});
+
+			const roles =
+				profile.defaultRoles.length > 0
+					? profile.defaultRoles
+					: (["cawg.creator"] as const);
+			const verifiedAt = new Date().toISOString();
+			const { signcert, pkey } = loadTestSigningCerts();
+
+			const prepared = await prepareIcaIdentityAssertion({
+				format,
+				asset: Buffer.from(input.dataBase64, "base64"),
+				manifestDefinition,
+				signcert,
+				pkey,
+				alg: "es256",
+				issuerDid: profile.webauthnCredential.issuerDid,
+				verifiedIdentities: buildIcaVerifiedIdentities(profile, verifiedAt),
+				icaOptions: {
+					sigType: "cawg.identity_claims_aggregation",
+					reserveSize: 8192,
+					roles: [...roles],
+				},
+			});
+
+			const sessionId = await createIcaSigningSession({
+				userId: ctx.session.user.id,
+				profileId: profile.id,
+				fileName: input.fileName,
+				prepared,
+			});
+
+			return {
+				sessionId,
+				toSignBase64: Buffer.from(prepared.toSign).toString("base64"),
+				issuerDid: prepared.issuerDid,
+			};
+		}),
+
+	/**
+	 * Two-step ICA (WebAuthn device key) identity signing — finalize phase.
+	 * Takes the 64-byte raw Ed25519 signature produced client-side over the
+	 * `toSign` bytes from prepareIcaSigning, and rebuilds+re-signs the full
+	 * manifest with the real signature embedded.
+	 */
+	finalizeIcaSigning: protectedProcedure
+		.input(
+			z.object({
+				sessionId: z.string().min(1),
+				signatureBase64: z.string().min(1),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const session = await getIcaSigningSession(
+				ctx.session.user.id,
+				input.sessionId,
+			);
+			if (!session) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Signing session not found or expired — start again.",
+				});
+			}
+
+			const signature = Buffer.from(input.signatureBase64, "base64");
+			if (signature.byteLength !== 64) {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: "Expected a 64-byte raw Ed25519 signature.",
+				});
+			}
+
+			const result = await finalizeIcaIdentityAssertion(
+				session.prepared,
+				signature,
+			);
+			await deleteIcaSigningSession(input.sessionId);
+
+			let manifestId: string | null = null;
+			try {
+				const outcome = await verifyAsset(
+					session.prepared.format,
+					result.signedAsset,
+					getTrustedCertificates(),
+				);
+				manifestId = outcome.manifests[0]?.id ?? null;
+			} catch (error) {
+				console.warn(
+					"[manifest] Could not re-verify freshly ICA-signed asset",
+					error,
+				);
+			}
+
+			return {
+				signedAssetBase64: Buffer.from(result.signedAsset).toString("base64"),
+				fileName: `signed-${session.fileName}`,
+				manifestId,
 			};
 		}),
 });
