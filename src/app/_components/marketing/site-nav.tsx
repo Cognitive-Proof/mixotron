@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AuthButton } from "~/app/_components/marketing/auth-button";
 
 const LINKS = [
+	{ href: "/info", label: "Guidance" },
 	{ href: "#features", label: "Features" },
 	{ href: "#how-it-works", label: "How It Works" },
 	{ href: "#licensing", label: "Licensing" },
@@ -12,22 +13,24 @@ const LINKS = [
 	{ href: "#architecture", label: "Architecture" },
 ];
 
-export function SiteNav() {
+export function SiteNav({ showLinks = true }: { showLinks?: boolean }) {
 	return (
 		<header className="site-nav">
 			<div className="wrap">
-				<Link className="wordmark" href="#top">
+				<Link className="wordmark" href={showLinks ? "#top" : "/"}>
 					<span className="dot" />
 					MIX-O-TRON
 				</Link>
 				<div className="nav-right">
-					<nav className="nav-links">
-						{LINKS.map((link) => (
-							<a href={link.href} key={link.href}>
-								{link.label}
-							</a>
-						))}
-					</nav>
+					{showLinks && (
+						<nav className="nav-links">
+							{LINKS.map((link) => (
+								<a href={link.href} key={link.href}>
+									{link.label}
+								</a>
+							))}
+						</nav>
+					)}
 					<AuthButton />
 				</div>
 			</div>
