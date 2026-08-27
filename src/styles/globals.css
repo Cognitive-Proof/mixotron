@@ -102,6 +102,18 @@ svg {
 	display: block;
 	max-width: 100%;
 }
+/* c2pa-react-component's provenance graph (C2paProvenanceGraph, used by
+   C2paManifest level 3 — the Verify page and the /info examples) renders
+   each edge between manifest nodes as its own unsized <svg>, relying on the
+   browser's default replaced-element sizing. The site-wide `display: block;
+   max-width: 100%` reset above collapses that to a 0-width box — the edge's
+   <path> data is always computed correctly, but the connecting line never
+   paints. Confirmed by inspecting the rendered DOM directly. Undo the reset
+   for just these internal svgs so the graph's connecting lines are visible. */
+.react-flow__edges svg {
+	display: inline;
+	max-width: none;
+}
 
 .mono {
 	font-family: var(--font-mono), ui-monospace, monospace;
@@ -1783,4 +1795,341 @@ fieldset.field legend,
 }
 .verify-item-status--muted {
 	color: var(--amber);
+}
+
+/* ---------- info / guidance doc page ---------- */
+.doc-hero {
+	padding: 3rem 0 2.2rem;
+	border-bottom: 1px solid var(--line);
+}
+.doc-back {
+	font-family: var(--font-mono), monospace;
+	font-size: 0.76rem;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	text-decoration: none;
+	color: var(--ink-soft);
+}
+.doc-back:hover {
+	color: var(--rose);
+}
+.doc-hero .eyebrow {
+	margin-top: 1.3rem;
+	margin-bottom: 0.9rem;
+}
+.doc-hero h1 {
+	font-size: clamp(1.9rem, 4vw, 2.7rem);
+	max-width: 26ch;
+}
+.doc-hero .doc-dek {
+	margin-top: 1.1rem;
+	max-width: 66ch;
+	color: var(--ink-soft);
+	font-size: 1.05rem;
+}
+.doc-meta {
+	margin-top: 1.4rem;
+	display: flex;
+	gap: 1.2rem;
+	flex-wrap: wrap;
+	font-family: var(--font-mono), monospace;
+	font-size: 0.74rem;
+	color: var(--ink-soft);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+}
+
+.doc-layout {
+	display: grid;
+	grid-template-columns: 232px minmax(0, 1fr);
+	gap: 3.5rem;
+	align-items: start;
+	padding: 3rem 0 6rem;
+}
+@media (max-width: 900px) {
+	.doc-layout {
+		grid-template-columns: 1fr;
+		padding-top: 2rem;
+	}
+}
+.doc-toc {
+	position: sticky;
+	top: 5.5rem;
+	max-height: calc(100vh - 7rem);
+	overflow-y: auto;
+}
+@media (max-width: 900px) {
+	.doc-toc {
+		position: static;
+		max-height: none;
+		margin-bottom: 1rem;
+	}
+}
+.doc-toc-title {
+	font-family: var(--font-mono), monospace;
+	font-size: 0.7rem;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: var(--rose);
+	margin-bottom: 0.8rem;
+}
+.doc-toc ol {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.1rem;
+}
+.doc-toc li.doc-toc-l2 {
+	padding-left: 0.9rem;
+}
+.doc-toc a {
+	display: block;
+	padding: 0.32rem 0 0.32rem 0.7rem;
+	margin-left: -0.7rem;
+	font-size: 0.84rem;
+	color: var(--ink-soft);
+	text-decoration: none;
+	border-left: 2px solid transparent;
+	transition:
+		color 0.15s ease,
+		border-color 0.15s ease;
+}
+.doc-toc li.doc-toc-l1 > a {
+	font-weight: 600;
+	color: var(--ink);
+}
+.doc-toc a:hover {
+	color: var(--rose);
+	border-color: var(--rose);
+}
+
+.doc-content {
+	max-width: 74ch;
+	min-width: 0;
+}
+.doc-section {
+	scroll-margin-top: 5.5rem;
+}
+.doc-section + .doc-section {
+	margin-top: 3.2rem;
+	padding-top: 3rem;
+	border-top: 1px solid var(--line);
+}
+.doc-content h2 {
+	font-size: clamp(1.5rem, 2.6vw, 1.9rem);
+}
+.doc-content h2 .doc-num {
+	color: var(--rose);
+	font-family: var(--font-mono), monospace;
+	font-weight: 600;
+	margin-right: 0.5rem;
+}
+.doc-subsection {
+	scroll-margin-top: 5.5rem;
+	margin-top: 2.6rem;
+}
+.doc-content h3 {
+	font-size: 1.28rem;
+}
+.doc-content h3 .doc-num {
+	color: var(--ink-soft);
+	font-family: var(--font-mono), monospace;
+	font-weight: 600;
+	font-size: 0.85em;
+	margin-right: 0.5rem;
+}
+.doc-subheading {
+	margin-top: 2rem;
+}
+.doc-content h4 {
+	font-size: 1.02rem;
+	font-family: var(--font-mono), monospace;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+	color: var(--ink-soft);
+	font-weight: 700;
+}
+.doc-content p {
+	margin-top: 1rem;
+	color: var(--ink-soft);
+	font-size: 1rem;
+	max-width: 68ch;
+}
+.doc-content p.doc-lead {
+	color: var(--ink);
+	font-size: 1.06rem;
+}
+.doc-content strong {
+	color: var(--ink);
+	font-weight: 700;
+}
+.doc-content ul {
+	margin: 1rem 0 0;
+	padding-left: 1.25rem;
+	color: var(--ink-soft);
+	display: flex;
+	flex-direction: column;
+	gap: 0.55rem;
+	max-width: 68ch;
+}
+.doc-content li > p {
+	margin: 0.3rem 0 0;
+}
+.doc-content a {
+	text-decoration-color: var(--line);
+	text-underline-offset: 3px;
+}
+.doc-content a:hover {
+	text-decoration-color: var(--link);
+}
+.doc-content code:not(.doc-code code) {
+	font-family: var(--font-mono), monospace;
+	background: var(--bg-alt);
+	border: 1px solid var(--line);
+	padding: 0.05em 0.4em;
+	border-radius: 5px;
+	font-size: 0.86em;
+	color: var(--ink);
+}
+
+.doc-deflist {
+	margin-top: 1.2rem;
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+}
+.doc-deflist dt {
+	font-family: var(--font-display), sans-serif;
+	font-weight: 700;
+	font-size: 1.02rem;
+	color: var(--ink);
+}
+.doc-deflist dd {
+	margin: 0.35rem 0 0;
+	color: var(--ink-soft);
+	max-width: 66ch;
+}
+
+.doc-note {
+	margin-top: 1.2rem;
+	border-left: 3px solid var(--amber);
+	background: var(--bg-alt);
+	border-radius: 0 8px 8px 0;
+	padding: 0.9rem 1.1rem;
+	font-size: 0.92rem;
+	color: var(--ink-soft);
+	max-width: 66ch;
+}
+.doc-note-label {
+	display: block;
+	font-family: var(--font-mono), monospace;
+	font-size: 0.7rem;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: var(--amber);
+	margin-bottom: 0.4rem;
+}
+
+/* c2pa-react-component's card levels hard-code a light-mode palette
+   (#242424 text, no background of their own on level 4) rather than reading
+   the site's theme tokens, so this wrapper pins an explicit white backdrop
+   itself instead of var(--panel) — on a dark page var(--panel) is dark and
+   the library's near-black text becomes unreadable. */
+.doc-preview {
+	margin-top: 1.2rem;
+	background: #fff;
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	box-shadow: var(--shadow);
+	overflow: hidden;
+}
+.doc-preview-label {
+	font-family: var(--font-mono), monospace;
+	font-size: 0.68rem;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--ink-soft);
+	padding: 0.55rem 1.1rem;
+	border-bottom: 1px solid var(--line);
+	background: var(--bg-alt);
+}
+.doc-preview-label--divider {
+	border-top: 1px solid var(--line);
+}
+.doc-preview-section {
+	padding: 1.1rem 1.2rem;
+}
+
+.doc-code {
+	margin-top: 1.2rem;
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	box-shadow: var(--shadow);
+	overflow: hidden;
+}
+.doc-code-label {
+	font-family: var(--font-mono), monospace;
+	font-size: 0.68rem;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: var(--ink-soft);
+	padding: 0.55rem 1.1rem;
+	border-bottom: 1px solid var(--line);
+	background: var(--bg-alt);
+}
+.doc-code pre {
+	margin: 0;
+	padding: 1.1rem 1.2rem;
+	overflow-x: auto;
+	font-family: var(--font-mono), monospace;
+	font-size: 0.8rem;
+	line-height: 1.6;
+	color: var(--ink);
+}
+.doc-code code {
+	font-family: inherit;
+}
+
+.doc-table-wrap {
+	overflow-x: auto;
+	margin-top: 1.2rem;
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+}
+.doc-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 0.86rem;
+}
+.doc-table th,
+.doc-table td {
+	text-align: left;
+	padding: 0.75rem 0.95rem;
+	border-bottom: 1px solid var(--line);
+	vertical-align: top;
+}
+.doc-table tr:last-child td {
+	border-bottom: none;
+}
+.doc-table th {
+	font-family: var(--font-mono), monospace;
+	font-size: 0.7rem;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--rose);
+	background: var(--bg-alt);
+}
+.doc-table td {
+	color: var(--ink-soft);
+}
+.doc-table code {
+	font-family: var(--font-mono), monospace;
+	font-size: 0.85em;
+	background: var(--bg-alt);
+	padding: 0.1em 0.4em;
+	border-radius: 4px;
+	color: var(--ink);
 }
