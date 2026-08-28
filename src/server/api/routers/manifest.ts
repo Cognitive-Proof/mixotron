@@ -54,8 +54,9 @@ interface ProfileDocument extends ProfileInput {
 	updatedAt: Date;
 	// See the identical comment on profile.ts's ProfileDocument — optional
 	// here because profiles created before this field existed have no such
-	// key in Mongo; defaulted to null below.
+	// key in Mongo; defaulted below.
 	webauthnCredential?: WebauthnCredential | null;
+	didWeb?: string | null;
 }
 
 async function getOwnedProfile(userId: string, id: string): Promise<Profile> {
@@ -72,7 +73,12 @@ async function getOwnedProfile(userId: string, id: string): Promise<Profile> {
 		throw new TRPCError({ code: "NOT_FOUND", message: "Profile not found" });
 	}
 	const { _id, ...rest } = doc;
-	return { id: _id.toString(), webauthnCredential: null, ...rest };
+	return {
+		id: _id.toString(),
+		webauthnCredential: null,
+		didWeb: null,
+		...rest,
+	};
 }
 
 interface VerifiedManifestDocument {
@@ -422,7 +428,9 @@ export const manifestRouter = createTRPCRouter({
 				signcert,
 				pkey,
 				alg: "es256",
-				issuerDid: profile.webauthnCredential.issuerDid,
+				// A linked did:web (see profile.linkDidWeb) supports key rotation;
+				// the bare did:jwk doesn't, so prefer it whenever one is set.
+				issuerDid: profile.didWeb ?? profile.webauthnCredential.issuerDid,
 				verifiedIdentities: buildIcaVerifiedIdentities(profile, verifiedAt),
 				icaOptions: {
 					sigType: "cawg.identity_claims_aggregation",
