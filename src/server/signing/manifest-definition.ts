@@ -23,7 +23,11 @@ export interface ManifestDefinitionInput {
 	digitalSourceType: string;
 	actions: string[];
 	aiDisclosure: AiDisclosureInput | null;
-	profile: Profile;
+	/** Null when authoring with "No profile — skip CAWG": every CAWG-specific
+	 * assertion (creative-work attribution, training-mining, CAWG metadata,
+	 * and — separately, in manifest.ts — cawg.identity) is omitted, leaving
+	 * a plain C2PA manifest. */
+	profile: Profile | null;
 }
 
 const ROLE_TO_SCHEMA_ORG_FIELD: Record<
@@ -54,26 +58,28 @@ const ROLE_TO_SCHEMA_ORG_FIELD: Record<
  * back to the generic "Creative work" label.
  */
 function buildCreativeWork(
-	input: ManifestDefinitionInput,
+	title: string,
+	description: string,
+	profile: Profile,
 ): Record<string, unknown> {
 	const party = {
-		"@type": input.profile.kind === "organization" ? "Organization" : "Person",
-		name: input.profile.displayName,
+		"@type": profile.kind === "organization" ? "Organization" : "Person",
+		name: profile.displayName,
 	};
 	const creativeWork: Record<string, unknown> = {
 		"@context": "https://schema.org",
 		"@type": "MusicRecording",
-		name: input.title,
+		name: title,
 		author: [party],
 		dateCreated: new Date().toISOString(),
 	};
-	if (input.description) {
-		creativeWork.description = input.description;
+	if (description) {
+		creativeWork.description = description;
 	}
 	const roles =
-		input.profile.defaultRoles.length === 0
+		profile.defaultRoles.length === 0
 			? (["cawg.creator"] as const)
-			: input.profile.defaultRoles;
+			: profile.defaultRoles;
 	for (const role of roles) {
 		const field = ROLE_TO_SCHEMA_ORG_FIELD[role];
 		creativeWork[field] = field === "publisher" ? party : [party];
@@ -220,20 +226,26 @@ export function buildManifestDefinition(
 		});
 	}
 
-	assertions.push({
-		label: "stds.schema-org.CreativeWork",
-		data: buildCreativeWork(input),
-	});
-	assertions.push({
-		label: "cawg.training-mining",
-		data: buildTrainingMiningAssertion(input.profile),
-	});
+	if (input.profile) {
+		assertions.push({
+			label: "stds.schema-org.CreativeWork",
+			data: buildCreativeWork(input.title, input.description, input.profile),
+		});
+		assertions.push({
+			label: "cawg.training-mining",
+			data: buildTrainingMiningAssertion(input.profile),
+		});
+	}
 
 	const definition: Record<string, unknown> = {
 		claim_generator_info: [{ name: "Mix-O-Tron" }],
 		title: input.title,
 		assertions,
 	};
+
+	if (!input.profile) {
+		return definition;
+	}
 
 	return addCawgMetadataAssertion(definition, {
 		"@context": {

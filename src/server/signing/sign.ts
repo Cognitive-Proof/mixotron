@@ -47,6 +47,24 @@ export interface SignResult {
 const TEST_CERTS_DIR = join(process.cwd(), "src/server/signing/test-certs");
 const TEST_SIGNING_ALG: SigningAlg = "es256";
 
+/** The same bundled ES256 test certificate/key used for the outer C2PA claim
+ * everywhere in this app. Exported so the ICA (WebAuthn) signing session
+ * flow in manifest.ts can build a PreparedIcaIdentityAssertion without
+ * duplicating this file-reading logic. */
+export function loadTestSigningCerts(): {
+	signcert: Uint8Array;
+	pkey: Uint8Array;
+} {
+	return {
+		signcert: new Uint8Array(
+			readFileSync(join(TEST_CERTS_DIR, "es256_certs.pem")),
+		),
+		pkey: new Uint8Array(
+			readFileSync(join(TEST_CERTS_DIR, "es256_private.key")),
+		),
+	};
+}
+
 const ICA_ISSUER_PRIVATE_KEY = new Uint8Array(
 	readFileSync(join(TEST_CERTS_DIR, "ica_issuer_ed25519.seed")),
 );
@@ -86,12 +104,7 @@ async function signViaExternalApi(_request: SignRequest): Promise<SignResult> {
 async function signViaLocalTestCerts(
 	request: SignRequest,
 ): Promise<SignResult> {
-	const signcert = new Uint8Array(
-		readFileSync(join(TEST_CERTS_DIR, "es256_certs.pem")),
-	);
-	const pkey = new Uint8Array(
-		readFileSync(join(TEST_CERTS_DIR, "es256_private.key")),
-	);
+	const { signcert, pkey } = loadTestSigningCerts();
 
 	if (request.ingredients.length === 0) {
 		const identityFields = request.identity

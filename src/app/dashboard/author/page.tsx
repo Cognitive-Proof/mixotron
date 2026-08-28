@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { type DragEvent, useEffect, useRef, useState } from "react";
 import {
@@ -14,7 +13,13 @@ import {
 	type IngredientRelationship,
 	type OptionInfo,
 } from "~/app/dashboard/author/_lib/c2pa";
-import { base64ToFile, fileToBase64 } from "~/lib/client-file";
+import { signIcaToSign } from "~/lib/cawg-webauthn";
+import {
+	base64ToBytes,
+	base64ToFile,
+	bytesToBase64,
+	fileToBase64,
+} from "~/lib/client-file";
 import {
 	detectVerifyFormat,
 	type ManifestVerificationResult,
@@ -22,6 +27,7 @@ import {
 import { api } from "~/trpc/react";
 
 const MAX_INGREDIENTS = 20;
+const NO_PROFILE_VALUE = "__none__";
 
 type VerificationState = "checking" | ManifestVerificationResult;
 
@@ -70,11 +76,12 @@ function verificationSummary(state: VerificationState): string {
 }
 
 export default function AuthorPage() {
-	const { data, isPending } = api.profile.list.useQuery();
+	const { data } = api.profile.list.useQuery();
 	const profiles = data ?? [];
-	const isReady = !isPending;
 	const verifyManifest = api.manifest.verify.useMutation();
 	const produceManifest = api.manifest.produce.useMutation();
+	const prepareIcaSigning = api.manifest.prepareIcaSigning.useMutation();
+	const finalizeIcaSigning = api.manifest.finalizeIcaSigning.useMutation();
 
 	const [profileId, setProfileId] = useState("");
 	const [title, setTitle] = useState("");
@@ -131,11 +138,19 @@ export default function AuthorPage() {
 	} | null>(null);
 
 	const selectedProfile = profiles.find((p) => p.id === profileId);
+	const noProfileSelected = profileId === NO_PROFILE_VALUE;
 	const showAiDisclosure =
 		creationOrigin === "created" &&
 		digitalSourceTypeInvolvesAI(digitalSourceType);
 	const hasParentIngredient = ingredients.some(
 		(i) => i.relationship === "parentOf",
+	);
+	// The ICA (device-key) signing path can't carry ingredients — same
+	// limitation as the shared-test-key identity path (see sign.ts) — so a
+	// release with ingredients always falls back to the server test key for
+	// its identity assertion, same as a profile with no device key at all.
+	const useWebAuthnSigning = Boolean(
+		selectedProfile?.webauthnCredential && ingredients.length === 0,
 	);
 	const finishedFormatSupported = finishedFile
 		? Boolean(detectVerifyFormat(finishedFile.name))
@@ -226,6 +241,51 @@ export default function AuthorPage() {
 		setProduceError(null);
 		try {
 			const dataBase64 = await fileToBase64(finishedFile);
+			const aiDisclosure = showAiDisclosure
+				? {
+						modelType: aiModelType,
+						modelName: aiModelName,
+						modelIdentifier: aiModelIdentifier,
+						humanOversightLevel: aiHumanOversight,
+					}
+				: null;
+
+			if (useWebAuthnSigning && selectedProfile?.webauthnCredential) {
+				const prepared = await prepareIcaSigning.mutateAsync({
+					fileName: finishedFile.name,
+					dataBase64,
+					profileId: selectedProfile.id,
+					title,
+					description,
+					creationOrigin,
+					digitalSourceType,
+					actions: selectedActions,
+					aiDisclosure,
+				});
+
+				// Prompts the user's authenticator (Touch ID / Windows Hello /
+				// security key) — this tap is their consent to sign. The private
+				// key it derives never leaves the browser.
+				const signature = await signIcaToSign(
+					selectedProfile.webauthnCredential,
+					base64ToBytes(prepared.toSignBase64),
+				);
+
+				const finalized = await finalizeIcaSigning.mutateAsync({
+					sessionId: prepared.sessionId,
+					signatureBase64: bytesToBase64(signature),
+				});
+
+				setSignedResult({
+					base64: finalized.signedAssetBase64,
+					fileName: finalized.fileName,
+					manifestId: finalized.manifestId,
+					skippedIngredients: [],
+				});
+				setStatus("produced");
+				return;
+			}
+
 			const ingredientPayloads = await Promise.all(
 				ingredients.map(async (ingredient) => ({
 					fileName: ingredient.file.name,
@@ -237,20 +297,13 @@ export default function AuthorPage() {
 			const result = await produceManifest.mutateAsync({
 				fileName: finishedFile.name,
 				dataBase64,
-				profileId,
+				profileId: noProfileSelected ? null : profileId,
 				title,
 				description,
 				creationOrigin,
 				digitalSourceType,
 				actions: selectedActions,
-				aiDisclosure: showAiDisclosure
-					? {
-							modelType: aiModelType,
-							modelName: aiModelName,
-							modelIdentifier: aiModelIdentifier,
-							humanOversightLevel: aiHumanOversight,
-						}
-					: null,
+				aiDisclosure,
 				ingredients: ingredientPayloads,
 			});
 
@@ -303,24 +356,6 @@ export default function AuthorPage() {
 		setSignedResult(null);
 	}
 
-	if (isReady && profiles.length === 0) {
-		return (
-			<>
-				<div className="dash-header">
-					<div className="eyebrow">Author</div>
-					<h1>You need a profile first</h1>
-					<p>Create a creator profile before authoring a release.</p>
-				</div>
-				<Link
-					className="btn btn-primary"
-					href="/dashboard/profile/createProfile"
-				>
-					Create a profile
-				</Link>
-			</>
-		);
-	}
-
 	if (status === "produced" && signedResult) {
 		return (
 			<>
@@ -340,7 +375,11 @@ export default function AuthorPage() {
 						<dt>Title</dt>
 						<dd>{title}</dd>
 						<dt>Profile</dt>
-						<dd>{selectedProfile?.displayName}</dd>
+						<dd>
+							{noProfileSelected
+								? "None — CAWG skipped"
+								: selectedProfile?.displayName}
+						</dd>
 						<dt>Origin</dt>
 						<dd>{labelFor(CREATION_ORIGINS, creationOrigin)}</dd>
 						{creationOrigin === "created" && (
@@ -434,12 +473,32 @@ export default function AuthorPage() {
 							value={profileId}
 						>
 							<option value="">Select a profile…</option>
+							<option value={NO_PROFILE_VALUE}>No profile — skip CAWG</option>
 							{profiles.map((profile) => (
 								<option key={profile.id} value={profile.id}>
 									{profile.displayName || "Untitled"}
 								</option>
 							))}
 						</select>
+						{noProfileSelected && (
+							<span className="field-hint">
+								No creator attribution, training-mining preferences, or identity
+								assertion will be included — just a plain C2PA manifest.
+							</span>
+						)}
+						{selectedProfile?.webauthnCredential &&
+							(useWebAuthnSigning ? (
+								<span className="field-hint">
+									This profile's identity claim will be signed with your
+									connected device key — you'll be prompted to confirm.
+								</span>
+							) : (
+								<span className="field-hint">
+									This profile has a device key connected, but it can't be used
+									alongside ingredients yet — the identity claim will be signed
+									with Mix-O-Tron's shared test key instead.
+								</span>
+							))}
 					</div>
 
 					<div className="field">

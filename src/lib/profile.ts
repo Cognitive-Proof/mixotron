@@ -148,9 +148,37 @@ export const profileInputSchema = z.object({
 });
 export type ProfileInput = z.infer<typeof profileInputSchema>;
 
+/**
+ * A WebAuthn credential registered for this profile's client-side CAWG
+ * identity signing (see src/lib/cawg-webauthn.ts). The Ed25519 private key
+ * itself is never stored anywhere — only what's needed to re-derive it from
+ * the authenticator (credentialId, prfSalt) and the DID that key derives
+ * to. Set only via profile.registerWebAuthnCredential, never through the
+ * general create/update profile form, so a routine profile edit can't
+ * accidentally clobber it.
+ */
+export const webauthnCredentialSchema = z.object({
+	credentialId: z.string().min(1),
+	prfSalt: z.string().min(1),
+	issuerDid: z.string().min(1),
+	// Base64url-encoded raw Ed25519 public key. Optional because profiles
+	// registered before this field existed won't have it stored — they
+	// simply can't link a did:web (see profile.linkDidWeb) until they
+	// reconnect their device key.
+	publicKey: z.string().min(1).optional(),
+});
+export type WebauthnCredential = z.infer<typeof webauthnCredentialSchema>;
+
 export interface Profile extends ProfileInput {
 	id: string;
 	userId: string;
 	createdAt: Date;
 	updatedAt: Date;
+	webauthnCredential: WebauthnCredential | null;
+	// did:web identity a Governorator/DIDsmith-style flow has verified this
+	// profile's device key is a listed verificationMethod of (see
+	// profile.linkDidWeb and src/server/trust/resolve-did-web.ts). When
+	// set, content signing prefers it over webauthnCredential.issuerDid's
+	// bare did:jwk, since it supports key rotation and the did:jwk doesn't.
+	didWeb: string | null;
 }
