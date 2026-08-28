@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
+	ProfileDidField,
 	ProfileKeySelect,
 	SignatureResult,
 	useProfileKeySigner,
@@ -182,6 +183,7 @@ export default function EnrollPage() {
 					profileId={profileId}
 					profiles={profiles}
 				/>
+				{credential && <ProfileDidField did={credential.issuerDid} />}
 				{credential && decoded && didMismatch && (
 					<p className="form-error">
 						This profile&apos;s identity (

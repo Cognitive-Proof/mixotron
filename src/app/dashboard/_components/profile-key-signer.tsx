@@ -113,6 +113,36 @@ export function ProfileKeySelect({
 	);
 }
 
+/** A profile's did:jwk with a Copy button, shown once a profile with a
+ * device key is selected — e.g. to paste into DIDsmith's "Add a key you
+ * don't hold" → "Target key's did:jwk" box, or to hand to a registry admin
+ * ahead of a Governorator enrollment (see docs/*.md). */
+export function ProfileDidField({ did }: { did: string }) {
+	const [copied, setCopied] = useState(false);
+	return (
+		<div className="field">
+			<label htmlFor="profileDid">Profile did:jwk</label>
+			<span className="field-hint">
+				Paste this wherever a did:jwk is being requested — e.g. DIDsmith&apos;s
+				&ldquo;Target key&apos;s did:jwk&rdquo; box.
+			</span>
+			<div style={{ display: "flex", gap: "0.6rem" }}>
+				<input id="profileDid" readOnly type="text" value={did} />
+				<button
+					className="btn btn-ghost btn-sm"
+					onClick={async () => {
+						await navigator.clipboard.writeText(did);
+						setCopied(true);
+					}}
+					type="button"
+				>
+					{copied ? "Copied" : "Copy"}
+				</button>
+			</div>
+		</div>
+	);
+}
+
 /** The signed-result readonly field + Copy button — shared between
  * /enroll and /sign. */
 export function SignatureResult({
