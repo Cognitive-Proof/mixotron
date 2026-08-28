@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import {
+	ProfileDidField,
 	ProfileKeySelect,
 	SignatureResult,
 	useProfileKeySigner,
@@ -63,6 +64,7 @@ export default function SignPage() {
 					profileId={profileId}
 					profiles={profiles}
 				/>
+				{credential && <ProfileDidField did={credential.issuerDid} />}
 
 				{error && <p className="form-error">{error}</p>}
 
