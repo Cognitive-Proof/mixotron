@@ -197,10 +197,17 @@ export default function EnrollPage() {
 
 				{error && <p className="form-error">{error}</p>}
 
+				{decoded && !credential && !didMismatch && (
+					<span className="field-hint" style={{ display: "block" }}>
+						Select a profile above to sign as before you can sign this request.
+					</span>
+				)}
+
 				<button
 					className="btn btn-primary"
 					disabled={!canSign || signing}
 					onClick={() => sign(new TextEncoder().encode(jwt.trim()))}
+					style={{ marginTop: "0.6rem" }}
 					type="button"
 				>
 					{signing ? "Waiting for device…" : "Sign request"}

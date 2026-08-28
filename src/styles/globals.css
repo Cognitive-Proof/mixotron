@@ -422,6 +422,16 @@ button:focus-visible {
 	transform: translateY(-2px);
 	box-shadow: 0 16px 34px -12px rgba(221, 81, 127, 0.75);
 }
+/* Without this, a disabled .btn/.btn-primary renders pixel-identical to an
+   enabled one — same solid color, same pointer cursor — so clicking it
+   looks like a dead click with zero feedback. */
+.btn:disabled {
+	cursor: not-allowed;
+	opacity: 0.45;
+	box-shadow: none;
+	transform: none;
+	pointer-events: none;
+}
 .btn-ghost {
 	background: transparent;
 	color: var(--ink);
