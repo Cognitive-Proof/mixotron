@@ -10,7 +10,6 @@ const NAV_LINKS = [
 	{ href: "/dashboard/author", label: "Author" },
 	{ href: "/dashboard/verify", label: "Verify" },
 	{ href: "/dashboard/link", label: "Link" },
-	{ href: "/dashboard/enroll", label: "Enroll" },
 	{ href: "/dashboard/sign", label: "Sign" },
 ];
 

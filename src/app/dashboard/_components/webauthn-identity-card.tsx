@@ -144,8 +144,7 @@ export function WebauthnIdentityCard({ profile }: { profile: Profile }) {
 									>
 										DIDsmith
 									</a>
-									) that already lists this key — see{" "}
-									<code>docs/didsmith-key-linking.md</code>. Sign that service's
+									) that already lists this key. Sign that service&apos;s
 									request on the <a href="/dashboard/sign">Sign</a> page first.
 								</span>
 								<div style={{ display: "flex", gap: "0.6rem" }}>
