@@ -1,17 +1,108 @@
 "use client";
 
-import { CAWGManifest } from "c2pa-react-cawg-component";
+import {
+	CAWGManifest,
+	type TrqpAuthorizationResponse,
+	TrustBadge,
+} from "c2pa-react-cawg-component";
 import { C2paManifest } from "c2pa-react-component";
 import { type DragEvent, useRef, useState } from "react";
 import { CawgTrustRegistry } from "~/app/_components/cawg-trust-registry";
 import { fileToBase64 } from "~/lib/client-file";
 import type { VerifyForDisplayResult } from "~/lib/manifest";
+import { MIXOTRON_TRUST_AUTHORITY_ID } from "~/lib/trust-registry";
 import { api } from "~/trpc/react";
 
 interface VerifyItem {
 	id: string;
 	fileName: string;
 	result: "checking" | VerifyForDisplayResult;
+}
+
+interface RealAffiliation {
+	issuer: string;
+	authorityId: string;
+	authorityName: string;
+}
+
+/**
+ * The generic Identity badge c2pa-react-cawg-component renders
+ * automatically (see CawgTrustRegistry) has no concept of *which*
+ * authority to check — it's inherently a self-attestation check, and
+ * stays backed by mixotron's local mock. A `cawg.affiliation` verified
+ * identity produced by a connected, enabled Governorator enrollment (see
+ * buildTrustRegistryVerifiedIdentities) is different: its `provider.id`
+ * names a real external authority, so it's the one case where a genuine
+ * live TRQP check is possible — this extracts those specific entries.
+ */
+function realAffiliationsOf(
+	manifest: { assertions?: Record<string, unknown> } | undefined,
+): RealAffiliation[] {
+	const identity = manifest?.assertions?.["cawg.identity"] as
+		| {
+				issuer?: string;
+				verifiedIdentities?: Array<{
+					type?: string;
+					provider?: { id?: string; name?: string };
+				}>;
+		  }
+		| undefined;
+	const issuer = identity?.issuer;
+	if (!issuer) return [];
+
+	return (identity.verifiedIdentities ?? [])
+		.filter(
+			(entry) =>
+				entry.type === "cawg.affiliation" &&
+				entry.provider?.id &&
+				entry.provider.id !== MIXOTRON_TRUST_AUTHORITY_ID,
+		)
+		.map((entry) => ({
+			issuer,
+			// Both narrowed non-nullable by the filter above.
+			authorityId: entry.provider?.id as string,
+			authorityName: entry.provider?.name ?? (entry.provider?.id as string),
+		}));
+}
+
+function TrustRegistryChecks({
+	affiliations,
+}: {
+	affiliations: RealAffiliation[];
+}) {
+	const utils = api.useUtils();
+	if (affiliations.length === 0) return null;
+
+	return (
+		<div style={{ marginTop: "0.8rem" }}>
+			<div className="cawg-section-title">Trust registry</div>
+			{affiliations.map((a) => (
+				<div
+					key={`${a.issuer}:${a.authorityId}`}
+					style={{
+						display: "flex",
+						alignItems: "center",
+						gap: "0.5rem",
+						marginTop: "0.4rem",
+					}}
+				>
+					<span className="field-hint">{a.authorityName}</span>
+					<TrustBadge
+						action="issue"
+						entityId={a.issuer}
+						queryFn={async (): Promise<TrqpAuthorizationResponse> =>
+							utils.manifest.checkTrustRegistryAuthorization.fetch({
+								entityId: a.issuer,
+								authorityId: a.authorityId,
+							})
+						}
+						resource="cawg.identity"
+						variant="compact"
+					/>
+				</div>
+			))}
+		</div>
+	);
 }
 
 export default function VerifyPage() {
@@ -75,9 +166,11 @@ export default function VerifyPage() {
 					inspect its full provenance chain.
 				</p>
 				<p className="verify-honesty-note">
-					Identity and trust-registry checks shown here are Mix-O-Tron's own
-					local test infrastructure, not a real identity-verification or TRQP
-					service — see each credential's identity section for details.
+					Identity checks in the main Identity section are Mix-O-Tron's own
+					local test infrastructure, not real identity verification. A separate
+					&quot;Trust registry&quot; badge appears only when a credential names
+					a real, connected authority — that one is a live check against that
+					authority's actual TRQP service.
 				</p>
 			</div>
 
@@ -150,11 +243,18 @@ export default function VerifyPage() {
 								PDF, JPEG, PNG, SVG, DNG, JSONC, XML, MD.
 							</p>
 						) : (
-							<C2paManifest
-								level={3}
-								manifest={item.result.outcome}
-								plugin={[CAWGManifest]}
-							/>
+							<>
+								<C2paManifest
+									level={3}
+									manifest={item.result.outcome}
+									plugin={[CAWGManifest]}
+								/>
+								<TrustRegistryChecks
+									affiliations={realAffiliationsOf(
+										item.result.outcome.manifests[0],
+									)}
+								/>
+							</>
 						)}
 					</div>
 				))}

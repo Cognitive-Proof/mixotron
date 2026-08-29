@@ -170,6 +170,41 @@ export function buildIcaVerifiedIdentities(
 }
 
 /**
+ * Maps a profile's *connected and enabled* Governorator trust-registry
+ * enrollments (see profile.addTrustRegistryEnrollment) to verified
+ * identities — the one case where `provider` is genuinely someone other
+ * than mixotron, since these are independently verified by a real
+ * authority, unlike the self-declared entries buildIcaVerifiedIdentities
+ * handles.
+ *
+ * Only ever called from prepareIcaSigning (manifest.ts) — never from
+ * produce()'s shared-test-key identity path, which signs as mixotron's
+ * own ICA_ISSUER_DID rather than the profile's own DID, so a profile's
+ * enrollment wouldn't actually apply there.
+ *
+ * The `subjectDid === currentDid` filter is deliberate, not redundant
+ * with `enabled`: it guards against a stale enrollment silently claiming
+ * authorization for a DID this profile no longer signs as (e.g. after
+ * reconnecting a new device key, which already clears didWeb).
+ */
+export function buildTrustRegistryVerifiedIdentities(
+	profile: Profile,
+	verifiedAt: string,
+): IcaVerifiedIdentity[] {
+	const currentDid = profile.didWeb ?? profile.webauthnCredential?.issuerDid;
+	if (!currentDid) return [];
+
+	return profile.trustRegistryEnrollments
+		.filter((entry) => entry.enabled && entry.subjectDid === currentDid)
+		.map((entry) => ({
+			type: "cawg.affiliation",
+			name: entry.authorityName,
+			verifiedAt,
+			provider: { id: entry.authorityId, name: entry.authorityName },
+		}));
+}
+
+/**
  * Builds the manifestDefinition object passed to signAsset /
  * signAssetWithIngredients.
  *

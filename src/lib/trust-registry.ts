@@ -10,3 +10,9 @@ export const MIXOTRON_ICA_ISSUER_DID =
 	"did:jwk:eyJrdHkiOiJPS1AiLCJjcnYiOiJFZDI1NTE5IiwieCI6Imx0RzZINmxHSFZKUDdETDhycjV0WWdYSHh4ZDdrSlEwUG53RVQyd3RiM2MifQ";
 
 export const MIXOTRON_TRUST_AUTHORITY_ID = "https://mix-o-tron.com";
+
+/** Governorator's real, live TRQP query service — confirmed reachable via
+ * GET /health. The actual fetch stays server-only (see
+ * src/server/trust/query-governorator.ts); this constant is just a URL,
+ * safe to import client-side too. */
+export const GOVERNORATOR_TRQP_BASE_URL = "https://trqp.governorator.com";

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { ObjectId } from "mongodb";
 import { z } from "zod";
@@ -6,11 +7,13 @@ import {
 	type Profile,
 	type ProfileInput,
 	profileInputSchema,
+	type TrustRegistryEnrollment,
 	type WebauthnCredential,
 	webauthnCredentialSchema,
 } from "~/lib/profile";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { mongoDb } from "~/server/db/mongo";
+import { queryGovernoratorAuthorization } from "~/server/trust/query-governorator";
 import {
 	DidWebResolutionError,
 	didWebListsPublicKey,
@@ -28,6 +31,7 @@ interface ProfileDocument extends ProfileInput {
 	// object handed to the rest of the app has it, defaulted to null.
 	webauthnCredential?: WebauthnCredential | null;
 	didWeb?: string | null;
+	trustRegistryEnrollments?: TrustRegistryEnrollment[];
 }
 
 const profiles = () => mongoDb.collection<ProfileDocument>("profiles");
@@ -38,6 +42,7 @@ function toProfile(doc: ProfileDocument): Profile {
 		id: _id.toString(),
 		webauthnCredential: null,
 		didWeb: null,
+		trustRegistryEnrollments: [],
 		...rest,
 	};
 }
@@ -257,5 +262,182 @@ export const profileRouter = createTRPCRouter({
 				});
 			}
 			return toProfile(result);
+		}),
+
+	/**
+	 * Records a Governorator TRQP enrollment request this profile just
+	 * signed on /dashboard/sign (see request-types.ts's
+	 * `connectToProfile`), so it's more than a one-off signature. Starts
+	 * enabled — see profile.setTrustRegistryEnrollmentEnabled.
+	 */
+	addTrustRegistryEnrollment: protectedProcedure
+		.input(
+			z.object({
+				id: z.string(),
+				authorityId: z.string().min(1),
+				authorityName: z.string().min(1),
+				resource: z.string().optional(),
+				action: z.string().optional(),
+				subjectDid: z.string().min(1),
+				requestJwt: z.string().min(1),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const doc = await profiles().findOne({
+				_id: parseObjectId(input.id),
+				userId: ctx.session.user.id,
+			});
+			if (!doc) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Profile not found",
+				});
+			}
+			if (!doc.webauthnCredential) {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: "This profile doesn't have a device identity key connected.",
+				});
+			}
+
+			const entry: TrustRegistryEnrollment = {
+				id: randomUUID(),
+				authorityId: input.authorityId,
+				authorityName: input.authorityName,
+				resource: input.resource,
+				action: input.action,
+				subjectDid: input.subjectDid,
+				requestJwt: input.requestJwt,
+				enabled: true,
+				signedAt: new Date().toISOString(),
+			};
+
+			const result = await profiles().findOneAndUpdate(
+				{ _id: doc._id },
+				{
+					$push: { trustRegistryEnrollments: entry },
+					$set: { updatedAt: new Date() },
+				},
+				{ returnDocument: "after" },
+			);
+			if (!result) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Profile not found",
+				});
+			}
+			return toProfile(result);
+		}),
+
+	/** Turns a connected enrollment on/off for future signing (see
+	 * buildTrustRegistryVerifiedIdentities) — turning it off doesn't
+	 * delete the record. */
+	setTrustRegistryEnrollmentEnabled: protectedProcedure
+		.input(
+			z.object({
+				id: z.string(),
+				enrollmentId: z.string().min(1),
+				enabled: z.boolean(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const doc = await profiles().findOne({
+				_id: parseObjectId(input.id),
+				userId: ctx.session.user.id,
+			});
+			if (!doc) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Profile not found",
+				});
+			}
+
+			const enrollments = doc.trustRegistryEnrollments ?? [];
+			if (!enrollments.some((e) => e.id === input.enrollmentId)) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Enrollment not found",
+				});
+			}
+
+			const result = await profiles().findOneAndUpdate(
+				{ _id: doc._id },
+				{
+					$set: {
+						trustRegistryEnrollments: enrollments.map((e) =>
+							e.id === input.enrollmentId
+								? { ...e, enabled: input.enabled }
+								: e,
+						),
+						updatedAt: new Date(),
+					},
+				},
+				{ returnDocument: "after" },
+			);
+			if (!result) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Profile not found",
+				});
+			}
+			return toProfile(result);
+		}),
+
+	/** Permanently removes a connected enrollment. */
+	removeTrustRegistryEnrollment: protectedProcedure
+		.input(z.object({ id: z.string(), enrollmentId: z.string().min(1) }))
+		.mutation(async ({ ctx, input }) => {
+			const result = await profiles().findOneAndUpdate(
+				{ _id: parseObjectId(input.id), userId: ctx.session.user.id },
+				{
+					$pull: { trustRegistryEnrollments: { id: input.enrollmentId } },
+					$set: { updatedAt: new Date() },
+				},
+				{ returnDocument: "after" },
+			);
+			if (!result) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Profile not found",
+				});
+			}
+			return toProfile(result);
+		}),
+
+	/**
+	 * Live check against Governorator's real TRQP registry for one
+	 * connected enrollment — independent of its enabled/disabled state,
+	 * since the point is to see whether the registry's own decision has
+	 * changed since it was signed.
+	 */
+	checkTrustRegistryEnrollment: protectedProcedure
+		.input(z.object({ id: z.string(), enrollmentId: z.string().min(1) }))
+		.query(async ({ ctx, input }) => {
+			const doc = await profiles().findOne({
+				_id: parseObjectId(input.id),
+				userId: ctx.session.user.id,
+			});
+			if (!doc) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Profile not found",
+				});
+			}
+			const entry = (doc.trustRegistryEnrollments ?? []).find(
+				(e) => e.id === input.enrollmentId,
+			);
+			if (!entry) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Enrollment not found",
+				});
+			}
+
+			return queryGovernoratorAuthorization({
+				entityId: entry.subjectDid,
+				authorityId: entry.authorityId,
+				resource: entry.resource,
+				action: entry.action,
+			});
 		}),
 });

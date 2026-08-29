@@ -169,6 +169,35 @@ export const webauthnCredentialSchema = z.object({
 });
 export type WebauthnCredential = z.infer<typeof webauthnCredentialSchema>;
 
+/**
+ * A Governorator TRQP enrollment request this profile has signed, kept
+ * around after the fact so it's more than a one-off signature (see
+ * profile.addTrustRegistryEnrollment). `enabled` controls whether it's
+ * embedded as a verified identity the *next* time this profile signs
+ * content (see buildTrustRegistryVerifiedIdentities) — turning it off
+ * doesn't delete the record, since Governorator's own decision about the
+ * enrollment can lag or later change, and the record's `subjectDid` is
+ * what's actually being vouched for, not necessarily this profile's
+ * current identity.
+ */
+export const trustRegistryEnrollmentSchema = z.object({
+	id: z.string().min(1),
+	authorityId: z.string().min(1),
+	authorityName: z.string().min(1),
+	resource: z.string().optional(),
+	action: z.string().optional(),
+	// The DID this enrollment actually authorizes (the signed request's
+	// `sub`) — not necessarily this profile's *current* identity, e.g.
+	// after reconnecting a new device key.
+	subjectDid: z.string().min(1),
+	requestJwt: z.string().min(1),
+	enabled: z.boolean(),
+	signedAt: z.string(),
+});
+export type TrustRegistryEnrollment = z.infer<
+	typeof trustRegistryEnrollmentSchema
+>;
+
 export interface Profile extends ProfileInput {
 	id: string;
 	userId: string;
@@ -181,4 +210,5 @@ export interface Profile extends ProfileInput {
 	// set, content signing prefers it over webauthnCredential.issuerDid's
 	// bare did:jwk, since it supports key rotation and the did:jwk doesn't.
 	didWeb: string | null;
+	trustRegistryEnrollments: TrustRegistryEnrollment[];
 }

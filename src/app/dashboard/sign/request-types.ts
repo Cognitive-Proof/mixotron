@@ -30,6 +30,20 @@ export interface RequestEvaluation {
 	reason?: string;
 }
 
+/** What a signed request offers to persist onto the profile afterwards —
+ * see RecognizedRequestType.connectToProfile. Deliberately shaped around
+ * "a trust-registry enrollment" rather than being a fully generic
+ * post-sign hook: that's the one kind of follow-up action a recognized
+ * request currently has, not a speculative extension point for anything
+ * hypothetical. */
+export interface ConnectableEnrollment {
+	authorityId: string;
+	authorityName: string;
+	resource?: string;
+	action?: string;
+	subjectDid: string;
+}
+
 export interface RecognizedRequestType {
 	id: string;
 	/** Shown in messages, e.g. "Governorator enrollment request". */
@@ -52,6 +66,16 @@ export interface RecognizedRequestType {
 		payload: Record<string, unknown>,
 		profile: ProfileIdentity,
 	) => RequestEvaluation;
+	/** Optional: offered as a button once this request is signed, to
+	 * remember it on the profile (see profile.addTrustRegistryEnrollment).
+	 * Not every recognized type has one — e.g. a DIDsmith key-link isn't a
+	 * registry enrollment, so it doesn't offer this. */
+	connectToProfile?: {
+		buttonLabel: string;
+		buildEnrollment: (
+			payload: Record<string, unknown>,
+		) => ConnectableEnrollment | null;
+	};
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -72,6 +96,28 @@ function credentialSubjectOf(
  * counter-signature over the whole string, proving control of the DID
  * named as `sub`.
  */
+function governoratorFieldsOf(payload: Record<string, unknown>) {
+	const sub = typeof payload.sub === "string" ? payload.sub : undefined;
+	const credentialSubject = credentialSubjectOf(payload);
+	const authorityName =
+		typeof credentialSubject?.authority_name === "string"
+			? credentialSubject.authority_name
+			: undefined;
+	const authorityId =
+		typeof credentialSubject?.authority_id === "string"
+			? credentialSubject.authority_id
+			: undefined;
+	const resource =
+		typeof credentialSubject?.resource === "string"
+			? credentialSubject.resource
+			: undefined;
+	const action =
+		typeof credentialSubject?.action === "string"
+			? credentialSubject.action
+			: undefined;
+	return { sub, authorityName, authorityId, resource, action };
+}
+
 const governoratorEnrollmentType: RecognizedRequestType = {
 	id: "governorator-enrollment",
 	label: "Governorator enrollment request",
@@ -80,7 +126,8 @@ const governoratorEnrollmentType: RecognizedRequestType = {
 	textToSign: (rawText) => rawText.trim(),
 	postSignHint: "Paste this back into Governorator's counter-signature box.",
 	evaluate: (payload, profile) => {
-		const sub = typeof payload.sub === "string" ? payload.sub : undefined;
+		const { sub, authorityName, authorityId, resource, action } =
+			governoratorFieldsOf(payload);
 		if (!sub) {
 			return {
 				signable: false,
@@ -88,24 +135,6 @@ const governoratorEnrollmentType: RecognizedRequestType = {
 				reason: 'This request has no "sub" field (the DID being enrolled).',
 			};
 		}
-
-		const credentialSubject = credentialSubjectOf(payload);
-		const authorityName =
-			typeof credentialSubject?.authority_name === "string"
-				? credentialSubject.authority_name
-				: undefined;
-		const authorityId =
-			typeof credentialSubject?.authority_id === "string"
-				? credentialSubject.authority_id
-				: undefined;
-		const resource =
-			typeof credentialSubject?.resource === "string"
-				? credentialSubject.resource
-				: undefined;
-		const action =
-			typeof credentialSubject?.action === "string"
-				? credentialSubject.action
-				: undefined;
 
 		const summary = [
 			`${authorityName ?? authorityId ?? "An authority"} wants to list you as a trusted entity${
@@ -125,6 +154,15 @@ const governoratorEnrollmentType: RecognizedRequestType = {
 		}
 
 		return { signable: true, summary };
+	},
+	connectToProfile: {
+		buttonLabel: "Connect this to your profile",
+		buildEnrollment: (payload) => {
+			const { sub, authorityName, authorityId, resource, action } =
+				governoratorFieldsOf(payload);
+			if (!sub || !authorityId || !authorityName) return null;
+			return { authorityId, authorityName, resource, action, subjectDid: sub };
+		},
 	},
 };
 

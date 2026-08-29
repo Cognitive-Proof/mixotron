@@ -16,7 +16,12 @@ import {
 	type VerifyForDisplayResult,
 	verifyInputSchema,
 } from "~/lib/manifest";
-import type { Profile, ProfileInput, WebauthnCredential } from "~/lib/profile";
+import type {
+	Profile,
+	ProfileInput,
+	TrustRegistryEnrollment,
+	WebauthnCredential,
+} from "~/lib/profile";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { mongoDb } from "~/server/db/mongo";
 import {
@@ -27,6 +32,7 @@ import {
 import {
 	buildIcaVerifiedIdentities,
 	buildManifestDefinition,
+	buildTrustRegistryVerifiedIdentities,
 } from "~/server/signing/manifest-definition";
 import {
 	loadTestSigningCerts,
@@ -37,6 +43,7 @@ import {
 	toDisplayOutcome,
 } from "~/server/signing/to-display-outcome";
 import { getTrustedCertificates } from "~/server/signing/trusted-certificates";
+import { queryGovernoratorAuthorization } from "~/server/trust/query-governorator";
 
 const aiDisclosureInputSchema = z
 	.object({
@@ -57,6 +64,7 @@ interface ProfileDocument extends ProfileInput {
 	// key in Mongo; defaulted below.
 	webauthnCredential?: WebauthnCredential | null;
 	didWeb?: string | null;
+	trustRegistryEnrollments?: TrustRegistryEnrollment[];
 }
 
 async function getOwnedProfile(userId: string, id: string): Promise<Profile> {
@@ -77,6 +85,7 @@ async function getOwnedProfile(userId: string, id: string): Promise<Profile> {
 		id: _id.toString(),
 		webauthnCredential: null,
 		didWeb: null,
+		trustRegistryEnrollments: [],
 		...rest,
 	};
 }
@@ -243,6 +252,28 @@ export const manifestRouter = createTRPCRouter({
 					cause: error,
 				});
 			}
+		}),
+
+	/**
+	 * Live TRQP authorization check for one verified identity claim shown
+	 * on the Verify page — unlike profile.checkTrustRegistryEnrollment,
+	 * this isn't scoped to a stored enrollment the caller owns: the Verify
+	 * page can check a claim embedded in *any* file someone drops on it,
+	 * naming whatever entityId/authorityId that file's own cawg.identity
+	 * assertion declares (see buildTrustRegistryVerifiedIdentities, which
+	 * is what puts these claims in a manifest in the first place).
+	 */
+	checkTrustRegistryAuthorization: protectedProcedure
+		.input(
+			z.object({
+				entityId: z.string().min(1),
+				authorityId: z.string().min(1),
+				resource: z.string().optional(),
+				action: z.string().optional(),
+			}),
+		)
+		.query(async ({ input }) => {
+			return queryGovernoratorAuthorization(input);
 		}),
 
 	produce: protectedProcedure
@@ -431,7 +462,10 @@ export const manifestRouter = createTRPCRouter({
 				// A linked did:web (see profile.linkDidWeb) supports key rotation;
 				// the bare did:jwk doesn't, so prefer it whenever one is set.
 				issuerDid: profile.didWeb ?? profile.webauthnCredential.issuerDid,
-				verifiedIdentities: buildIcaVerifiedIdentities(profile, verifiedAt),
+				verifiedIdentities: [
+					...buildIcaVerifiedIdentities(profile, verifiedAt),
+					...buildTrustRegistryVerifiedIdentities(profile, verifiedAt),
+				],
 				icaOptions: {
 					sigType: "cawg.identity_claims_aggregation",
 					reserveSize: 8192,

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ProfileForm } from "~/app/dashboard/_components/profile-form";
+import { TrustRegistryEnrollmentsCard } from "~/app/dashboard/_components/trust-registry-enrollments-card";
 import { WebauthnIdentityCard } from "~/app/dashboard/_components/webauthn-identity-card";
 import { api } from "~/trpc/react";
 
@@ -60,6 +61,7 @@ export default function EditProfilePage() {
 			/>
 
 			<WebauthnIdentityCard profile={profile} />
+			<TrustRegistryEnrollmentsCard profile={profile} />
 		</>
 	);
 }
