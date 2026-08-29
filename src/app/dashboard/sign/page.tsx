@@ -12,6 +12,7 @@ import {
 	type RecognizedRequestType,
 } from "~/app/dashboard/sign/request-types";
 import { fromBase64Url } from "~/lib/cawg-webauthn";
+import { api } from "~/trpc/react";
 
 interface ParsedRequest {
 	segmentCount: 2 | 3;
@@ -105,6 +106,13 @@ export default function SignPage() {
 
 	const [text, setText] = useState("");
 
+	const utils = api.useUtils();
+	const connectToProfile = api.profile.addTrustRegistryEnrollment.useMutation({
+		onSuccess: async () => {
+			await utils.profile.list.invalidate();
+		},
+	});
+
 	const parsed = useMemo(() => parseRequest(text), [text]);
 
 	// Which registered type (if any) this request declares itself as, and
@@ -179,6 +187,7 @@ export default function SignPage() {
 						onChange={(e) => {
 							setText(e.target.value);
 							reset();
+							connectToProfile.reset();
 						}}
 						placeholder="eyJhbGciOi..."
 						rows={5}
@@ -274,6 +283,60 @@ export default function SignPage() {
 						onCopy={copySignature}
 						signature={signature}
 					/>
+				)}
+
+				{signature && matched?.connectToProfile && parsed?.ok && profileId && (
+					<div
+						className="field"
+						style={{
+							marginTop: "1rem",
+							paddingTop: "1rem",
+							borderTop: "1px solid var(--line)",
+						}}
+					>
+						{connectToProfile.isSuccess ? (
+							<span className="field-hint">
+								Connected — manage it from{" "}
+								<a href={`/dashboard/profile/${profileId}/edit`}>
+									this profile&apos;s edit page
+								</a>
+								.
+							</span>
+						) : (
+							<>
+								<button
+									className="btn btn-ghost btn-sm"
+									disabled={connectToProfile.isPending}
+									onClick={() => {
+										const draft = matched.connectToProfile?.buildEnrollment(
+											parsed.value.payload,
+										);
+										if (!draft) return;
+										connectToProfile.mutate({
+											id: profileId,
+											...draft,
+											requestJwt: text.trim(),
+										});
+									}}
+									type="button"
+								>
+									{connectToProfile.isPending
+										? "Connecting…"
+										: matched.connectToProfile.buttonLabel}
+								</button>
+								<span
+									className="field-hint"
+									style={{ display: "block", marginTop: "0.4rem" }}
+								>
+									Remembers which authority this is and lets you turn it on or
+									off for future signing from this profile&apos;s edit page.
+								</span>
+								{connectToProfile.error && (
+									<p className="form-error">{connectToProfile.error.message}</p>
+								)}
+							</>
+						)}
+					</div>
 				)}
 			</div>
 		</>

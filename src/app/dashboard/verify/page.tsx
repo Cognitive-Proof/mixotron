@@ -75,9 +75,10 @@ export default function VerifyPage() {
 					inspect its full provenance chain.
 				</p>
 				<p className="verify-honesty-note">
-					Identity and trust-registry checks shown here are Mix-O-Tron's own
-					local test infrastructure, not a real identity-verification or TRQP
-					service — see each credential's identity section for details.
+					Identity checks shown here are Mix-O-Tron's own local test
+					infrastructure, not real identity verification. Trust-registry checks
+					are live calls to the real TRQP service named by each credential's
+					connected authority, where one is present.
 				</p>
 			</div>
 

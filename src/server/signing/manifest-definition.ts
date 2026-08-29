@@ -1,13 +1,17 @@
 import {
 	addCawgMetadataAssertion,
 	type IcaVerifiedIdentity,
+	type TrustRegistryClaim,
 } from "c2pa-rs-javascript-library";
 import {
 	type Profile,
 	TRAINING_CATEGORIES,
 	type VerifiedIdentityEntry,
 } from "~/lib/profile";
-import { MIXOTRON_TRUST_AUTHORITY_ID } from "~/lib/trust-registry";
+import {
+	GOVERNORATOR_TRQP_BASE_URL,
+	MIXOTRON_TRUST_AUTHORITY_ID,
+} from "~/lib/trust-registry";
 
 export interface AiDisclosureInput {
 	modelType: string;
@@ -167,6 +171,47 @@ export function buildIcaVerifiedIdentities(
 			}
 		},
 	);
+}
+
+/**
+ * Maps a profile's *connected and enabled* Governorator trust-registry
+ * enrollments (see profile.addTrustRegistryEnrollment) to
+ * credentialSubject.c2paAsset.trust_registry claims — c2pa-rs-javascript-
+ * library@0.2.6+'s native representation for this, superseding the earlier
+ * cawg.affiliation-verified-identity stand-in (which could only carry
+ * authority id/name, not the resource/action/registry-endpoint a verifier
+ * actually needs to check the claim itself).
+ *
+ * `trqpAuthorizationUri` is hardcoded to Governorator's own endpoint since
+ * every enrollment mixotron currently supports comes from there — this
+ * would need to become per-enrollment if a second registry integration is
+ * ever added.
+ *
+ * Only ever called from prepareIcaSigning (manifest.ts) — never from
+ * produce()'s shared-test-key identity path, which signs as mixotron's
+ * own ICA_ISSUER_DID rather than the profile's own DID, so a profile's
+ * enrollment wouldn't actually apply there.
+ *
+ * The `subjectDid === currentDid` filter is deliberate, not redundant
+ * with `enabled`: it guards against a stale enrollment silently claiming
+ * authorization for a DID this profile no longer signs as (e.g. after
+ * reconnecting a new device key, which already clears didWeb).
+ */
+export function buildTrustRegistryClaims(
+	profile: Profile,
+): TrustRegistryClaim[] {
+	const currentDid = profile.didWeb ?? profile.webauthnCredential?.issuerDid;
+	if (!currentDid) return [];
+
+	return profile.trustRegistryEnrollments
+		.filter((entry) => entry.enabled && entry.subjectDid === currentDid)
+		.map((entry) => ({
+			trqpAuthorizationUri: GOVERNORATOR_TRQP_BASE_URL,
+			entityId: currentDid,
+			authorityId: entry.authorityId,
+			action: entry.action ?? "issue",
+			resource: entry.resource ?? "cawg.identity",
+		}));
 }
 
 /**

@@ -16,7 +16,12 @@ import {
 	type VerifyForDisplayResult,
 	verifyInputSchema,
 } from "~/lib/manifest";
-import type { Profile, ProfileInput, WebauthnCredential } from "~/lib/profile";
+import type {
+	Profile,
+	ProfileInput,
+	TrustRegistryEnrollment,
+	WebauthnCredential,
+} from "~/lib/profile";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { mongoDb } from "~/server/db/mongo";
 import {
@@ -27,6 +32,7 @@ import {
 import {
 	buildIcaVerifiedIdentities,
 	buildManifestDefinition,
+	buildTrustRegistryClaims,
 } from "~/server/signing/manifest-definition";
 import {
 	loadTestSigningCerts,
@@ -37,6 +43,7 @@ import {
 	toDisplayOutcome,
 } from "~/server/signing/to-display-outcome";
 import { getTrustedCertificates } from "~/server/signing/trusted-certificates";
+import { queryGovernoratorAuthorization } from "~/server/trust/query-governorator";
 
 const aiDisclosureInputSchema = z
 	.object({
@@ -57,6 +64,7 @@ interface ProfileDocument extends ProfileInput {
 	// key in Mongo; defaulted below.
 	webauthnCredential?: WebauthnCredential | null;
 	didWeb?: string | null;
+	trustRegistryEnrollments?: TrustRegistryEnrollment[];
 }
 
 async function getOwnedProfile(userId: string, id: string): Promise<Profile> {
@@ -77,6 +85,7 @@ async function getOwnedProfile(userId: string, id: string): Promise<Profile> {
 		id: _id.toString(),
 		webauthnCredential: null,
 		didWeb: null,
+		trustRegistryEnrollments: [],
 		...rest,
 	};
 }
@@ -243,6 +252,37 @@ export const manifestRouter = createTRPCRouter({
 					cause: error,
 				});
 			}
+		}),
+
+	/**
+	 * Live TRQP authorization check for one trust_registry entry — called
+	 * by CawgTrustRegistry's global queryFn (see
+	 * src/app/_components/cawg-trust-registry.tsx), which c2pa-react-cawg-
+	 * component's own CAWGManifest rendering invokes automatically for
+	 * every credentialSubject.c2paAsset.trust_registry entry it finds, so
+	 * the Verify page's built-in trust-registry display shows real data
+	 * without any page-specific code. Not scoped to a stored enrollment —
+	 * this can check a claim embedded in *any* file someone drops on
+	 * Verify, naming whatever entityId/authorityId that file's own
+	 * cawg.identity assertion declares.
+	 *
+	 * Always queries Governorator's real, fixed endpoint regardless of
+	 * what trqpAuthorizationUri a manifest claims — trusting an
+	 * attacker-suppliable URL as a server-side fetch target would be an
+	 * SSRF opening, and Governorator is the only registry mixotron
+	 * integrates with today anyway.
+	 */
+	checkTrustRegistryAuthorization: protectedProcedure
+		.input(
+			z.object({
+				entityId: z.string().min(1),
+				authorityId: z.string().min(1),
+				resource: z.string().optional(),
+				action: z.string().optional(),
+			}),
+		)
+		.query(async ({ input }) => {
+			return queryGovernoratorAuthorization(input);
 		}),
 
 	produce: protectedProcedure
@@ -436,6 +476,7 @@ export const manifestRouter = createTRPCRouter({
 					sigType: "cawg.identity_claims_aggregation",
 					reserveSize: 8192,
 					roles: [...roles],
+					trustRegistry: buildTrustRegistryClaims(profile),
 				},
 			});
 
