@@ -32,7 +32,7 @@ import {
 import {
 	buildIcaVerifiedIdentities,
 	buildManifestDefinition,
-	buildTrustRegistryVerifiedIdentities,
+	buildTrustRegistryClaims,
 } from "~/server/signing/manifest-definition";
 import {
 	loadTestSigningCerts,
@@ -255,13 +255,22 @@ export const manifestRouter = createTRPCRouter({
 		}),
 
 	/**
-	 * Live TRQP authorization check for one verified identity claim shown
-	 * on the Verify page — unlike profile.checkTrustRegistryEnrollment,
-	 * this isn't scoped to a stored enrollment the caller owns: the Verify
-	 * page can check a claim embedded in *any* file someone drops on it,
-	 * naming whatever entityId/authorityId that file's own cawg.identity
-	 * assertion declares (see buildTrustRegistryVerifiedIdentities, which
-	 * is what puts these claims in a manifest in the first place).
+	 * Live TRQP authorization check for one trust_registry entry — called
+	 * by CawgTrustRegistry's global queryFn (see
+	 * src/app/_components/cawg-trust-registry.tsx), which c2pa-react-cawg-
+	 * component's own CAWGManifest rendering invokes automatically for
+	 * every credentialSubject.c2paAsset.trust_registry entry it finds, so
+	 * the Verify page's built-in trust-registry display shows real data
+	 * without any page-specific code. Not scoped to a stored enrollment —
+	 * this can check a claim embedded in *any* file someone drops on
+	 * Verify, naming whatever entityId/authorityId that file's own
+	 * cawg.identity assertion declares.
+	 *
+	 * Always queries Governorator's real, fixed endpoint regardless of
+	 * what trqpAuthorizationUri a manifest claims — trusting an
+	 * attacker-suppliable URL as a server-side fetch target would be an
+	 * SSRF opening, and Governorator is the only registry mixotron
+	 * integrates with today anyway.
 	 */
 	checkTrustRegistryAuthorization: protectedProcedure
 		.input(
@@ -462,14 +471,12 @@ export const manifestRouter = createTRPCRouter({
 				// A linked did:web (see profile.linkDidWeb) supports key rotation;
 				// the bare did:jwk doesn't, so prefer it whenever one is set.
 				issuerDid: profile.didWeb ?? profile.webauthnCredential.issuerDid,
-				verifiedIdentities: [
-					...buildIcaVerifiedIdentities(profile, verifiedAt),
-					...buildTrustRegistryVerifiedIdentities(profile, verifiedAt),
-				],
+				verifiedIdentities: buildIcaVerifiedIdentities(profile, verifiedAt),
 				icaOptions: {
 					sigType: "cawg.identity_claims_aggregation",
 					reserveSize: 8192,
 					roles: [...roles],
+					trustRegistry: buildTrustRegistryClaims(profile),
 				},
 			});
 

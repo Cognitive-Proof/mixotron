@@ -9,27 +9,48 @@ import {
 	MIXOTRON_ICA_ISSUER_DID,
 	MIXOTRON_TRUST_AUTHORITY_ID,
 } from "~/lib/trust-registry";
+import { api } from "~/trpc/react";
 
 /**
- * There's no real TRQP (Trust Registry Query Protocol) endpoint anywhere in
- * this stack — mixotron doesn't operate one, and there's no public one to
- * point at either. Without *some* queryFn registered, c2pa-react-cawg-
- * component's TrustBadge throws on every render (queryTrustRegistry()'s
- * default implementation always throws). This is a local stand-in that
- * recognizes only mixotron's own self-attestation issuer DID (see
- * ../../server/signing/test-certs/README.md) as "authorized", the same way
- * the package's own dev playground mocks it
- * (c2pa-react-cawg-component/src/dev/App.tsx) — so the badge shows an
- * honest, locally-scoped result instead of erroring out.
+ * Registers the global default queryFn that c2pa-react-cawg-component's
+ * CAWGManifest rendering calls automatically for every trust badge that
+ * doesn't get an explicit per-instance queryFn — as of @0.1.14, that
+ * includes every credentialSubject.c2paAsset.trust_registry entry it finds
+ * (via useTrustRegistrySummary), not just the generic top-level identity
+ * badge. Two cases, told apart by authorityId:
+ *
+ *  - No authorityId, or authorityId is mixotron's own: this is the
+ *    generic self-attestation identity badge. Mixotron doesn't operate a
+ *    real TRQP endpoint for its own DIDs, so this is answered from a local
+ *    stand-in, the same way the package's own dev playground mocks it
+ *    (c2pa-react-cawg-component/src/dev/App.tsx) — honest, locally-scoped,
+ *    not a real verification.
+ *  - A different, real authorityId: a genuine trust_registry claim (see
+ *    buildTrustRegistryClaims) — proxied to
+ *    manifest.checkTrustRegistryAuthorization, a real live call to
+ *    Governorator's TRQP service, so the credential's own built-in
+ *    trust-registry display shows real data with no page-specific code.
  */
 export function CawgTrustRegistry() {
+	const utils = api.useUtils();
+
 	useEffect(() => {
 		setTrustRegistryQueryFn(
 			async ({
 				entityId,
 				action = "issue",
 				resource = "cawg.identity",
+				authorityId,
 			}): Promise<TrqpAuthorizationResponse> => {
+				if (authorityId && authorityId !== MIXOTRON_TRUST_AUTHORITY_ID) {
+					return utils.manifest.checkTrustRegistryAuthorization.fetch({
+						entityId,
+						authorityId,
+						action,
+						resource,
+					});
+				}
+
 				const time_requested = new Date().toISOString();
 				const known = entityId === MIXOTRON_ICA_ISSUER_DID;
 
@@ -47,7 +68,7 @@ export function CawgTrustRegistry() {
 				};
 			},
 		);
-	}, []);
+	}, [utils]);
 
 	return null;
 }
