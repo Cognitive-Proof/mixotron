@@ -1,9 +1,10 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { ObjectId } from "mongodb";
 import { z } from "zod";
 
 import {
+	type DomainVerification,
 	type Profile,
 	type ProfileInput,
 	profileInputSchema,
@@ -19,6 +20,10 @@ import {
 	didWebListsPublicKey,
 	resolveDidWeb,
 } from "~/server/trust/resolve-did-web";
+import {
+	checkDomainChallenge,
+	normalizeDomain,
+} from "~/server/trust/verify-domain";
 
 interface ProfileDocument extends ProfileInput {
 	_id: ObjectId;
@@ -32,6 +37,7 @@ interface ProfileDocument extends ProfileInput {
 	webauthnCredential?: WebauthnCredential | null;
 	didWeb?: string | null;
 	trustRegistryEnrollments?: TrustRegistryEnrollment[];
+	domainVerifications?: DomainVerification[];
 }
 
 const profiles = () => mongoDb.collection<ProfileDocument>("profiles");
@@ -43,6 +49,7 @@ function toProfile(doc: ProfileDocument): Profile {
 		webauthnCredential: null,
 		didWeb: null,
 		trustRegistryEnrollments: [],
+		domainVerifications: [],
 		...rest,
 	};
 }
@@ -439,5 +446,143 @@ export const profileRouter = createTRPCRouter({
 				resource: entry.resource,
 				action: entry.action,
 			});
+		}),
+
+	/**
+	 * Starts a DNS TXT domain-ownership challenge for this profile. Doesn't
+	 * require a device key — unlike a trust registry enrollment, a verified
+	 * domain isn't bound to a specific DID at creation time; it only gets
+	 * attached to a signature later, via buildVerifiedDomainIdentities,
+	 * once a device key exists.
+	 */
+	addDomainVerification: protectedProcedure
+		.input(z.object({ id: z.string(), domain: z.string().min(1) }))
+		.mutation(async ({ ctx, input }) => {
+			const doc = await profiles().findOne({
+				_id: parseObjectId(input.id),
+				userId: ctx.session.user.id,
+			});
+			if (!doc) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Profile not found",
+				});
+			}
+
+			let domain: string;
+			try {
+				domain = normalizeDomain(input.domain);
+			} catch (error) {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: error instanceof Error ? error.message : "Invalid domain.",
+				});
+			}
+
+			const entry: DomainVerification = {
+				id: randomUUID(),
+				domain,
+				token: randomBytes(16).toString("hex"),
+				createdAt: new Date().toISOString(),
+				verified: false,
+				verifiedAt: null,
+			};
+
+			const result = await profiles().findOneAndUpdate(
+				{ _id: doc._id },
+				{
+					$push: { domainVerifications: entry },
+					$set: { updatedAt: new Date() },
+				},
+				{ returnDocument: "after" },
+			);
+			if (!result) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Profile not found",
+				});
+			}
+			return toProfile(result);
+		}),
+
+	/**
+	 * Live check: does `_mixotron-challenge.<domain>` currently carry this
+	 * entry's token? On-demand only, same as checkTrustRegistryEnrollment —
+	 * no background recheck. Once verified, a domain stays verified even if
+	 * the TXT record is later removed (see domainVerificationSchema's doc
+	 * comment in ~/lib/profile).
+	 */
+	checkDomainVerification: protectedProcedure
+		.input(
+			z.object({ id: z.string(), domainVerificationId: z.string().min(1) }),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const doc = await profiles().findOne({
+				_id: parseObjectId(input.id),
+				userId: ctx.session.user.id,
+			});
+			if (!doc) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Profile not found",
+				});
+			}
+
+			const entries = doc.domainVerifications ?? [];
+			const entry = entries.find((e) => e.id === input.domainVerificationId);
+			if (!entry) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Domain not found",
+				});
+			}
+
+			const check = await checkDomainChallenge(entry.domain, entry.token);
+
+			const result = await profiles().findOneAndUpdate(
+				{ _id: doc._id },
+				{
+					$set: {
+						domainVerifications: entries.map((e) =>
+							e.id === entry.id && check.verified
+								? { ...e, verified: true, verifiedAt: new Date().toISOString() }
+								: e,
+						),
+						updatedAt: new Date(),
+					},
+				},
+				{ returnDocument: "after" },
+			);
+			if (!result) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Profile not found",
+				});
+			}
+
+			return { profile: toProfile(result), check };
+		}),
+
+	/** Permanently removes a domain verification (pending or verified). */
+	removeDomainVerification: protectedProcedure
+		.input(
+			z.object({ id: z.string(), domainVerificationId: z.string().min(1) }),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const result = await profiles().findOneAndUpdate(
+				{ _id: parseObjectId(input.id), userId: ctx.session.user.id },
+				{
+					$pull: { domainVerifications: { id: input.domainVerificationId } },
+					$set: { updatedAt: new Date() },
+				},
+				{ returnDocument: "after" },
+			);
+			if (!result) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Profile not found",
+				});
+			}
+			return toProfile(result);
 		}),
 });

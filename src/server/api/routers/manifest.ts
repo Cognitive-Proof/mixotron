@@ -17,6 +17,7 @@ import {
 	verifyInputSchema,
 } from "~/lib/manifest";
 import type {
+	DomainVerification,
 	Profile,
 	ProfileInput,
 	TrustRegistryEnrollment,
@@ -33,6 +34,7 @@ import {
 	buildIcaVerifiedIdentities,
 	buildManifestDefinition,
 	buildTrustRegistryClaims,
+	buildVerifiedDomainIdentities,
 } from "~/server/signing/manifest-definition";
 import {
 	loadTestSigningCerts,
@@ -65,6 +67,7 @@ interface ProfileDocument extends ProfileInput {
 	webauthnCredential?: WebauthnCredential | null;
 	didWeb?: string | null;
 	trustRegistryEnrollments?: TrustRegistryEnrollment[];
+	domainVerifications?: DomainVerification[];
 }
 
 async function getOwnedProfile(userId: string, id: string): Promise<Profile> {
@@ -86,6 +89,7 @@ async function getOwnedProfile(userId: string, id: string): Promise<Profile> {
 		webauthnCredential: null,
 		didWeb: null,
 		trustRegistryEnrollments: [],
+		domainVerifications: [],
 		...rest,
 	};
 }
@@ -471,7 +475,10 @@ export const manifestRouter = createTRPCRouter({
 				// A linked did:web (see profile.linkDidWeb) supports key rotation;
 				// the bare did:jwk doesn't, so prefer it whenever one is set.
 				issuerDid: profile.didWeb ?? profile.webauthnCredential.issuerDid,
-				verifiedIdentities: buildIcaVerifiedIdentities(profile, verifiedAt),
+				verifiedIdentities: [
+					...buildIcaVerifiedIdentities(profile, verifiedAt),
+					...buildVerifiedDomainIdentities(profile, verifiedAt),
+				],
 				icaOptions: {
 					sigType: "cawg.identity_claims_aggregation",
 					reserveSize: 8192,

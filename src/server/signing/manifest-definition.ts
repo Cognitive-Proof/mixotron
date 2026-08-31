@@ -134,13 +134,6 @@ export function buildIcaVerifiedIdentities(
 		(entry: VerifiedIdentityEntry): IcaVerifiedIdentity => {
 			const base = { verifiedAt, provider };
 			switch (entry.type) {
-				case "cawg.web_site":
-					return {
-						...base,
-						type: entry.type,
-						name: entry.provider,
-						uri: entry.value,
-					};
 				case "cawg.social_media":
 					return {
 						...base,
@@ -211,6 +204,45 @@ export function buildTrustRegistryClaims(
 			authorityId: entry.authorityId,
 			action: entry.action ?? "issue",
 			resource: entry.resource ?? "cawg.identity",
+		}));
+}
+
+/**
+ * Maps a profile's DNS-verified domains (see profile.addDomainVerification /
+ * src/server/trust/verify-domain.ts) to cawg.web_site verified identities —
+ * the only source of that type now that the profile form's old free-text
+ * "Website" verified-identity entry has been removed (see
+ * VERIFIED_IDENTITY_TYPES in ~/lib/profile). Unlike that removed entry,
+ * `provider` here genuinely isn't mixotron self-attesting: mixotron actually
+ * checked a TXT record it generated the challenge for.
+ *
+ * Filters on `verified`, not on the current signing DID — a verified domain
+ * isn't scoped to a specific DID the way a trust-registry enrollment's
+ * `subjectDid` is (see buildTrustRegistryClaims); it's a fact about the
+ * domain, attached to whichever DID this profile happens to sign as.
+ *
+ * Only ever called from prepareIcaSigning (manifest.ts) — never from
+ * produce()'s shared-test-key identity path, for the same reason
+ * buildTrustRegistryClaims is: that path signs as mixotron's own
+ * ICA_ISSUER_DID, not the profile's own identity.
+ */
+export function buildVerifiedDomainIdentities(
+	profile: Profile,
+	verifiedAt: string,
+): IcaVerifiedIdentity[] {
+	const provider = {
+		id: MIXOTRON_TRUST_AUTHORITY_ID,
+		name: "Mix-O-Tron (DNS-verified domain ownership)",
+	};
+
+	return profile.domainVerifications
+		.filter((entry) => entry.verified)
+		.map((entry) => ({
+			type: "cawg.web_site" as const,
+			name: entry.domain,
+			uri: `https://${entry.domain}`,
+			verifiedAt,
+			provider,
 		}));
 }
 

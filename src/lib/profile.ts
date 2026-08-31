@@ -1,8 +1,16 @@
 import { z } from "zod";
 
-/** CAWG Identity Assertion 1.3 — verifiedIdentities[].type */
+/**
+ * CAWG Identity Assertion 1.3 — verifiedIdentities[].type.
+ *
+ * Deliberately excludes "cawg.web_site": that type used to be a free-text,
+ * self-attested entry here (any URI the user typed was accepted as-is).
+ * It's now only ever produced by DNS TXT domain verification (see
+ * domainVerificationSchema / buildVerifiedDomainIdentities) — a real
+ * ownership check replaces the "just type anything" gap instead of living
+ * alongside it.
+ */
 export const VERIFIED_IDENTITY_TYPES = [
-	"cawg.web_site",
 	"cawg.social_media",
 	"cawg.affiliation",
 	"cawg.crypto_wallet",
@@ -11,7 +19,6 @@ export const VERIFIED_IDENTITY_TYPES = [
 export type VerifiedIdentityType = (typeof VERIFIED_IDENTITY_TYPES)[number];
 
 export const VERIFIED_IDENTITY_LABELS: Record<VerifiedIdentityType, string> = {
-	"cawg.web_site": "Website",
 	"cawg.social_media": "Social media",
 	"cawg.affiliation": "Affiliation",
 	"cawg.crypto_wallet": "Crypto wallet",
@@ -23,11 +30,6 @@ export const VERIFIED_IDENTITY_FIELD_LABELS: Record<
 	VerifiedIdentityType,
 	{ provider: string; value: string; valueHint: string }
 > = {
-	"cawg.web_site": {
-		provider: "Provider name",
-		value: "URI",
-		valueHint: "The website whose domain proves this identity.",
-	},
 	"cawg.social_media": {
 		provider: "Platform name",
 		value: "Username",
@@ -198,6 +200,28 @@ export type TrustRegistryEnrollment = z.infer<
 	typeof trustRegistryEnrollmentSchema
 >;
 
+/**
+ * Proof that this profile controls a domain, via a DNS TXT challenge (see
+ * profile.addDomainVerification / src/server/trust/verify-domain.ts) —
+ * replaces the old free-text "cawg.web_site" verified-identity entry, which
+ * accepted any URI the user typed with no check at all. `token` is a
+ * server-generated random value the user publishes as
+ * `_mixotron-challenge.<domain>` TXT; `verified`/`verifiedAt` record the
+ * result of the last successful on-demand check (profile.checkDomainVerification)
+ * — there's no background recheck, so a verified domain stays verified even
+ * if the TXT record is later removed, same as Google Search Console/ACME
+ * DNS-01 treat proof-of-control as a point-in-time fact.
+ */
+export const domainVerificationSchema = z.object({
+	id: z.string().min(1),
+	domain: z.string().min(1),
+	token: z.string().min(1),
+	createdAt: z.string(),
+	verified: z.boolean(),
+	verifiedAt: z.string().nullable(),
+});
+export type DomainVerification = z.infer<typeof domainVerificationSchema>;
+
 export interface Profile extends ProfileInput {
 	id: string;
 	userId: string;
@@ -211,4 +235,5 @@ export interface Profile extends ProfileInput {
 	// bare did:jwk, since it supports key rotation and the did:jwk doesn't.
 	didWeb: string | null;
 	trustRegistryEnrollments: TrustRegistryEnrollment[];
+	domainVerifications: DomainVerification[];
 }
