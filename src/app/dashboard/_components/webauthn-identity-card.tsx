@@ -1,13 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import {
-	isWebAuthnSupported,
-	PrfNotSupportedError,
-	registerWebAuthnPrfCredential,
-} from "~/lib/cawg-webauthn";
+import { isWebAuthnSupported } from "~/lib/cawg-webauthn";
 import type { Profile } from "~/lib/profile";
 import { api } from "~/trpc/react";
+import { WebauthnRegistrationModal } from "./webauthn-registration-modal";
 
 function truncateDid(did: string): string {
 	return did.length > 40 ? `${did.slice(0, 24)}…${did.slice(-10)}` : did;
@@ -15,8 +12,8 @@ function truncateDid(did: string): string {
 
 export function WebauthnIdentityCard({ profile }: { profile: Profile }) {
 	const utils = api.useUtils();
-	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [showRegistrationModal, setShowRegistrationModal] = useState(false);
 	const [didWebInput, setDidWebInput] = useState("");
 	const [linkError, setLinkError] = useState<string | null>(null);
 
@@ -42,29 +39,6 @@ export function WebauthnIdentityCard({ profile }: { profile: Profile }) {
 	const unlinkDidWeb = api.profile.unlinkDidWeb.useMutation({
 		onSuccess: invalidate,
 	});
-
-	async function handleConnect() {
-		setError(null);
-		setBusy(true);
-		try {
-			const result = await registerWebAuthnPrfCredential(
-				profile.id,
-				profile.displayName,
-			);
-			await register.mutateAsync({
-				id: profile.id,
-				credential: result,
-			});
-		} catch (err) {
-			setError(
-				err instanceof PrfNotSupportedError
-					? err.message
-					: "Couldn't register a device key. Please try again.",
-			);
-		} finally {
-			setBusy(false);
-		}
-	}
 
 	if (!isWebAuthnSupported()) {
 		return null;
@@ -182,11 +156,13 @@ export function WebauthnIdentityCard({ profile }: { profile: Profile }) {
 			) : (
 				<button
 					className="btn btn-primary btn-sm"
-					disabled={busy}
-					onClick={handleConnect}
+					onClick={() => {
+						setError(null);
+						setShowRegistrationModal(true);
+					}}
 					type="button"
 				>
-					{busy ? "Connecting…" : "Connect a device key"}
+					Connect a device key
 				</button>
 			)}
 
@@ -194,6 +170,18 @@ export function WebauthnIdentityCard({ profile }: { profile: Profile }) {
 				<p className="form-error" style={{ marginTop: "0.6rem" }}>
 					{error}
 				</p>
+			)}
+
+			{showRegistrationModal && (
+				<WebauthnRegistrationModal
+					onCancel={() => setShowRegistrationModal(false)}
+					onRegistered={async (result) => {
+						await register.mutateAsync({ id: profile.id, credential: result });
+						setShowRegistrationModal(false);
+					}}
+					profileDisplayName={profile.displayName}
+					profileId={profile.id}
+				/>
 			)}
 		</div>
 	);
