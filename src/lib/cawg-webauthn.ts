@@ -18,7 +18,9 @@
 import {
 	computeIcaIssuerDidFromPublicKey,
 	isWebAuthnSupported,
+	beginWebAuthnPrfRegistration as libBeginWebAuthnPrfRegistration,
 	deriveSigningSeed as libDeriveSigningSeed,
+	finishWebAuthnPrfRegistration as libFinishWebAuthnPrfRegistration,
 	registerWebAuthnPrfCredential as libRegisterWebAuthnPrfCredential,
 	signIcaToSign as libSignIcaToSign,
 	PrfNotSupportedError,
@@ -39,6 +41,10 @@ const CONFIG: WebAuthnPrfIdentityConfig = {
 	hkdfInfo: "mixotron-cawg-ica-v1",
 };
 
+/** All-in-one registration — fires two native WebAuthn prompts back to back
+ * with no app UI in between. Prefer beginWebAuthnPrfRegistration /
+ * finishWebAuthnPrfRegistration (see webauthn-identity-card.tsx) so the
+ * user sees why they're being asked twice. */
 export function registerWebAuthnPrfCredential(
 	profileId: string,
 	profileDisplayName: string,
@@ -48,6 +54,29 @@ export function registerWebAuthnPrfCredential(
 		profileId,
 		profileDisplayName,
 	);
+}
+
+/**
+ * Step 1 of registration: creates the WebAuthn credential (first native
+ * prompt) and confirms the authenticator supports PRF. Doesn't derive any
+ * key material yet — call finishWebAuthnPrfRegistration next.
+ */
+export function beginWebAuthnPrfRegistration(
+	profileId: string,
+	profileDisplayName: string,
+): Promise<{ credentialId: string }> {
+	return libBeginWebAuthnPrfRegistration(CONFIG, profileId, profileDisplayName);
+}
+
+/**
+ * Step 2 of registration: evaluates PRF for the credential
+ * beginWebAuthnPrfRegistration just created (second native prompt) and
+ * derives the resulting Ed25519 identity key and DID.
+ */
+export function finishWebAuthnPrfRegistration(
+	credentialId: string,
+): Promise<WebAuthnRegistrationResult> {
+	return libFinishWebAuthnPrfRegistration(CONFIG, credentialId);
 }
 
 /**
