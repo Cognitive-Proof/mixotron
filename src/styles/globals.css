@@ -2177,3 +2177,110 @@ fieldset.field legend,
 	border-radius: 4px;
 	color: var(--ink);
 }
+
+/* ---------- MIDI arranger (info/midi) ---------- */
+.midi-tool {
+	margin-top: 1.2rem;
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	box-shadow: var(--shadow);
+	padding: 1.4rem;
+}
+.midi-controls {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 1.2rem;
+	align-items: flex-end;
+	margin-bottom: 1.2rem;
+}
+.midi-control {
+	display: flex;
+	flex-direction: column;
+	gap: 0.3rem;
+}
+.midi-control label {
+	font-family: var(--font-mono), monospace;
+	font-size: 0.68rem;
+	font-weight: 600;
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+	color: var(--ink-soft);
+}
+.midi-control select,
+.midi-control input[type="number"] {
+	font-family: var(--font-body), sans-serif;
+	font-size: 0.88rem;
+	padding: 0.45rem 0.6rem;
+	border-radius: 8px;
+	border: 1px solid var(--line);
+	background: var(--bg-alt);
+	color: var(--ink);
+}
+.midi-transport {
+	display: flex;
+	gap: 0.6rem;
+	margin-left: auto;
+}
+.midi-grid-scroll {
+	overflow-x: auto;
+	border: 1px solid var(--line);
+	border-radius: 10px;
+}
+.midi-grid {
+	display: flex;
+	flex-direction: column;
+	width: max-content;
+}
+.midi-row {
+	display: flex;
+}
+.midi-row-label {
+	width: 3.4rem;
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	padding-right: 0.5rem;
+	font-family: var(--font-mono), monospace;
+	font-size: 0.68rem;
+	color: var(--ink-soft);
+	background: var(--bg-alt);
+	border-right: 1px solid var(--line);
+	border-bottom: 1px solid var(--line);
+}
+.midi-row-label.is-sharp {
+	color: var(--ink);
+}
+.midi-cell {
+	width: 1.6rem;
+	height: 1.6rem;
+	flex-shrink: 0;
+	border-right: 1px solid var(--line);
+	border-bottom: 1px solid var(--line);
+	background: var(--panel);
+	cursor: pointer;
+	padding: 0;
+}
+.midi-cell:hover {
+	background: var(--bg-alt);
+}
+.midi-cell.is-beat {
+	border-right-color: color-mix(in srgb, var(--ink) 18%, var(--line));
+}
+.midi-cell.is-on {
+	background: var(--rose);
+}
+.midi-cell.is-on:hover {
+	opacity: 0.85;
+}
+.midi-cell.is-playhead {
+	box-shadow: inset 0 0 0 2px var(--amber);
+}
+.midi-export-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.7rem;
+	margin-top: 1.4rem;
+	align-items: center;
+}

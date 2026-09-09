@@ -156,6 +156,9 @@ export default function InfoPage() {
 							<span>Draft · v0.1</span>
 							<span>No account required</span>
 						</div>
+						<p className="doc-dek">
+							<Link href="/info/midi">Try it: arrange a MIDI pattern →</Link>
+						</p>
 					</div>
 				</div>
 

@@ -1,5 +1,6 @@
 import { linkRouter } from "~/server/api/routers/link";
 import { manifestRouter } from "~/server/api/routers/manifest";
+import { midiRouter } from "~/server/api/routers/midi";
 import { postRouter } from "~/server/api/routers/post";
 import { profileRouter } from "~/server/api/routers/profile";
 import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
@@ -14,6 +15,7 @@ export const appRouter = createTRPCRouter({
 	profile: profileRouter,
 	manifest: manifestRouter,
 	link: linkRouter,
+	midi: midiRouter,
 });
 
 // export type definition of API
