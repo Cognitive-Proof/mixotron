@@ -4,7 +4,7 @@ import { z } from "zod";
 /**
  * Formats c2pa-rs-javascript-library can currently verify (its
  * `SupportedFormat` union). See dist-node/c2pa_rs_wasm.d.ts. Audio support
- * (mpeg/wav/flac) landed in 0.2.3.
+ * (mpeg/wav/flac) landed in 0.2.3; MIDI (audio/midi) landed in 0.2.8.
  */
 export const SUPPORTED_VERIFY_FORMATS = [
 	"application/pdf",
@@ -18,6 +18,7 @@ export const SUPPORTED_VERIFY_FORMATS = [
 	"audio/mpeg",
 	"audio/wav",
 	"audio/flac",
+	"audio/midi",
 ] as const;
 export type SupportedVerifyFormat = (typeof SUPPORTED_VERIFY_FORMATS)[number];
 
@@ -36,6 +37,8 @@ const EXTENSION_TO_FORMAT: Record<string, SupportedVerifyFormat> = {
 	mp3: "audio/mpeg",
 	wav: "audio/wav",
 	flac: "audio/flac",
+	mid: "audio/midi",
+	midi: "audio/midi",
 };
 
 /** Extension-based detection — more reliable across OSes than file.type. */

@@ -105,10 +105,12 @@ export default function AuthorPage() {
 	const [finishedActive, setFinishedActive] = useState(false);
 	const finishedInputRef = useRef<HTMLInputElement>(null);
 
+	const searchParams = useSearchParams();
+
 	// ?linkUpload=<id> arrives from the Link upload landing page — pulls the
 	// file a tool like Audacity uploaded back down into the browser so it
 	// behaves exactly as if the user had picked it themselves.
-	const linkUploadId = useSearchParams().get("linkUpload");
+	const linkUploadId = searchParams.get("linkUpload");
 	const linkUpload = api.link.downloadUpload.useQuery(
 		{ uploadId: linkUploadId ?? "" },
 		{ enabled: Boolean(linkUploadId) },
@@ -707,7 +709,7 @@ export default function AuthorPage() {
 						{finishedFile && !finishedFormatSupported && (
 							<span className="field-hint" style={{ color: "var(--amber)" }}>
 								This format can&apos;t be signed yet — supported: PDF, JPEG,
-								PNG, SVG, DNG, JSONC, XML, MD, MP3, WAV, FLAC.
+								PNG, SVG, DNG, JSONC, XML, MD, MP3, WAV, FLAC, MIDI.
 							</span>
 						)}
 					</div>
