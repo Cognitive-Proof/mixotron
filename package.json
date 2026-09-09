@@ -37,6 +37,7 @@
 		"react-qr-code": "^2.2.0",
 		"server-only": "^0.0.1",
 		"superjson": "^2.2.1",
+		"viem": "^2.56.3",
 		"zod": "^4.5.1"
 	},
 	"devDependencies": {

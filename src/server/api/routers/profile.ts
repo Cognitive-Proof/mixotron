@@ -8,6 +8,7 @@ import {
 	type ProfileInput,
 	profileInputSchema,
 	type TrustRegistryEnrollment,
+	type WalletVerification,
 	type WebauthnCredential,
 	webauthnCredentialSchema,
 } from "~/lib/profile";
@@ -19,6 +20,11 @@ import {
 	didWebListsPublicKey,
 	resolveDidWeb,
 } from "~/server/trust/resolve-did-web";
+import {
+	buildWalletChallenge,
+	normalizeAddress,
+	verifyWalletChallenge,
+} from "~/server/trust/verify-wallet";
 
 interface ProfileDocument extends ProfileInput {
 	_id: ObjectId;
@@ -32,6 +38,7 @@ interface ProfileDocument extends ProfileInput {
 	webauthnCredential?: WebauthnCredential | null;
 	didWeb?: string | null;
 	trustRegistryEnrollments?: TrustRegistryEnrollment[];
+	walletVerifications?: WalletVerification[];
 }
 
 const profiles = () => mongoDb.collection<ProfileDocument>("profiles");
@@ -43,6 +50,7 @@ function toProfile(doc: ProfileDocument): Profile {
 		webauthnCredential: null,
 		didWeb: null,
 		trustRegistryEnrollments: [],
+		walletVerifications: [],
 		...rest,
 	};
 }
@@ -439,5 +447,163 @@ export const profileRouter = createTRPCRouter({
 				resource: entry.resource,
 				action: entry.action,
 			});
+		}),
+
+	/**
+	 * Starts a wallet-ownership challenge: stores a random, one-time message
+	 * for this address that the wallet will be asked to sign next (see
+	 * profile.checkWalletVerification). Doesn't require a device key —
+	 * like a domain, a wallet address isn't bound to a specific DID at
+	 * creation time; it only gets attached to a signature later, via
+	 * buildVerifiedWalletIdentities, once a device key exists.
+	 */
+	addWalletVerification: protectedProcedure
+		.input(z.object({ id: z.string(), address: z.string().min(1) }))
+		.mutation(async ({ ctx, input }) => {
+			const doc = await profiles().findOne({
+				_id: parseObjectId(input.id),
+				userId: ctx.session.user.id,
+			});
+			if (!doc) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Profile not found",
+				});
+			}
+
+			let address: string;
+			try {
+				address = normalizeAddress(input.address);
+			} catch (error) {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: error instanceof Error ? error.message : "Invalid address.",
+				});
+			}
+
+			const entry: WalletVerification = {
+				id: randomUUID(),
+				address,
+				challenge: buildWalletChallenge(input.id, address),
+				createdAt: new Date().toISOString(),
+				verified: false,
+				verifiedAt: null,
+			};
+
+			const result = await profiles().findOneAndUpdate(
+				{ _id: doc._id },
+				{
+					$push: { walletVerifications: entry },
+					$set: { updatedAt: new Date() },
+				},
+				{ returnDocument: "after" },
+			);
+			if (!result) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Profile not found",
+				});
+			}
+			return toProfile(result);
+		}),
+
+	/**
+	 * Verifies a signature over this entry's stored challenge recovers to
+	 * its address (see src/server/trust/verify-wallet.ts) — on-demand only,
+	 * same as checkDomainVerification/checkTrustRegistryEnrollment. Once
+	 * verified, an address stays verified even if it's later moved to a
+	 * different wallet.
+	 */
+	checkWalletVerification: protectedProcedure
+		.input(
+			z.object({
+				id: z.string(),
+				walletVerificationId: z.string().min(1),
+				signature: z.string().min(1),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const doc = await profiles().findOne({
+				_id: parseObjectId(input.id),
+				userId: ctx.session.user.id,
+			});
+			if (!doc) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Profile not found",
+				});
+			}
+
+			const entries = doc.walletVerifications ?? [];
+			const entry = entries.find((e) => e.id === input.walletVerificationId);
+			if (!entry) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Wallet not found",
+				});
+			}
+
+			let verified: boolean;
+			try {
+				verified = await verifyWalletChallenge(
+					entry.address,
+					entry.challenge,
+					input.signature,
+				);
+			} catch {
+				verified = false;
+			}
+
+			const result = await profiles().findOneAndUpdate(
+				{ _id: doc._id },
+				{
+					$set: {
+						walletVerifications: entries.map((e) =>
+							e.id === entry.id && verified
+								? { ...e, verified: true, verifiedAt: new Date().toISOString() }
+								: e,
+						),
+						updatedAt: new Date(),
+					},
+				},
+				{ returnDocument: "after" },
+			);
+			if (!result) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Profile not found",
+				});
+			}
+
+			return {
+				profile: toProfile(result),
+				verified,
+				reason: verified
+					? undefined
+					: "That signature doesn't match this address.",
+			};
+		}),
+
+	/** Permanently removes a wallet verification (pending or verified). */
+	removeWalletVerification: protectedProcedure
+		.input(
+			z.object({ id: z.string(), walletVerificationId: z.string().min(1) }),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const result = await profiles().findOneAndUpdate(
+				{ _id: parseObjectId(input.id), userId: ctx.session.user.id },
+				{
+					$pull: { walletVerifications: { id: input.walletVerificationId } },
+					$set: { updatedAt: new Date() },
+				},
+				{ returnDocument: "after" },
+			);
+			if (!result) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Profile not found",
+				});
+			}
+			return toProfile(result);
 		}),
 });

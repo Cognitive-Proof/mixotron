@@ -155,13 +155,6 @@ export function buildIcaVerifiedIdentities(
 						name: entry.provider,
 						uri: entry.value,
 					};
-				case "cawg.crypto_wallet":
-					return {
-						...base,
-						type: entry.type,
-						name: entry.provider,
-						address: entry.value,
-					};
 				case "cawg.document_verification":
 					return { ...base, type: entry.type, name: entry.value };
 				default: {
@@ -211,6 +204,46 @@ export function buildTrustRegistryClaims(
 			authorityId: entry.authorityId,
 			action: entry.action ?? "issue",
 			resource: entry.resource ?? "cawg.identity",
+		}));
+}
+
+/**
+ * Maps a profile's verified EVM wallets (see profile.addWalletVerification /
+ * src/server/trust/verify-wallet.ts) to cawg.crypto_wallet verified
+ * identities — the only source of that type now that the profile form's old
+ * free-text "Crypto wallet" verified-identity entry has been removed (see
+ * VERIFIED_IDENTITY_TYPES in ~/lib/profile). Unlike that removed entry,
+ * `provider` here genuinely isn't mixotron self-attesting: the profile
+ * proved control of the address by signing a server-issued challenge with
+ * it.
+ *
+ * Filters on `verified`, not on the current signing DID — like a verified
+ * domain, a wallet address isn't scoped to a specific DID the way a
+ * trust-registry enrollment's `subjectDid` is; it's a fact about the
+ * address, attached to whichever DID this profile happens to sign as.
+ *
+ * Only ever called from prepareIcaSigning (manifest.ts) — never from
+ * produce()'s shared-test-key identity path, for the same reason
+ * buildTrustRegistryClaims is: that path signs as mixotron's own
+ * ICA_ISSUER_DID, not the profile's own identity.
+ */
+export function buildVerifiedWalletIdentities(
+	profile: Profile,
+	verifiedAt: string,
+): IcaVerifiedIdentity[] {
+	const provider = {
+		id: MIXOTRON_TRUST_AUTHORITY_ID,
+		name: "Mix-O-Tron (wallet signature verified)",
+	};
+
+	return profile.walletVerifications
+		.filter((entry) => entry.verified)
+		.map((entry) => ({
+			type: "cawg.crypto_wallet" as const,
+			name: "EVM wallet",
+			address: entry.address,
+			verifiedAt,
+			provider,
 		}));
 }
 

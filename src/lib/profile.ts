@@ -1,11 +1,21 @@
 import { z } from "zod";
 
-/** CAWG Identity Assertion 1.3 — verifiedIdentities[].type */
+/**
+ * CAWG Identity Assertion 1.3 — verifiedIdentities[].type.
+ *
+ * Deliberately excludes "cawg.crypto_wallet": that used to be a free-text,
+ * self-attested entry here (any address the user typed was accepted as-is,
+ * with no proof they actually controlled it). It's now only ever produced
+ * by connecting a wallet and signing a challenge (see
+ * walletVerificationSchema / buildVerifiedWalletIdentities) — real proof of
+ * key control replaces the "just type an address" gap instead of living
+ * alongside it, the same way domain ownership replaced the old free-text
+ * "cawg.web_site" entry.
+ */
 export const VERIFIED_IDENTITY_TYPES = [
 	"cawg.web_site",
 	"cawg.social_media",
 	"cawg.affiliation",
-	"cawg.crypto_wallet",
 	"cawg.document_verification",
 ] as const;
 export type VerifiedIdentityType = (typeof VERIFIED_IDENTITY_TYPES)[number];
@@ -14,7 +24,6 @@ export const VERIFIED_IDENTITY_LABELS: Record<VerifiedIdentityType, string> = {
 	"cawg.web_site": "Website",
 	"cawg.social_media": "Social media",
 	"cawg.affiliation": "Affiliation",
-	"cawg.crypto_wallet": "Crypto wallet",
 	"cawg.document_verification": "Document verification",
 };
 
@@ -37,11 +46,6 @@ export const VERIFIED_IDENTITY_FIELD_LABELS: Record<
 		provider: "Organization name",
 		value: "Organization URI",
 		valueHint: "Optional link to the organization.",
-	},
-	"cawg.crypto_wallet": {
-		provider: "Network / provider",
-		value: "Wallet address",
-		valueHint: "e.g. Ethereum",
 	},
 	"cawg.document_verification": {
 		provider: "Verifying provider",
@@ -198,6 +202,26 @@ export type TrustRegistryEnrollment = z.infer<
 	typeof trustRegistryEnrollmentSchema
 >;
 
+/**
+ * Proof that this profile controls an EVM wallet, via a signed-challenge
+ * flow (see profile.addWalletVerification / src/server/trust/verify-wallet.ts)
+ * — replaces the old free-text "cawg.crypto_wallet" verified-identity entry,
+ * which accepted any address the user typed with no check at all. `address`
+ * is EIP-55 checksummed; `challenge` is the exact text the wallet must sign
+ * with `personal_sign`. There's no background recheck — once verified, an
+ * address stays verified even though wallet control could theoretically
+ * change hands later, same tradeoff as domain/DNS verification.
+ */
+export const walletVerificationSchema = z.object({
+	id: z.string().min(1),
+	address: z.string().min(1),
+	challenge: z.string().min(1),
+	createdAt: z.string(),
+	verified: z.boolean(),
+	verifiedAt: z.string().nullable(),
+});
+export type WalletVerification = z.infer<typeof walletVerificationSchema>;
+
 export interface Profile extends ProfileInput {
 	id: string;
 	userId: string;
@@ -211,4 +235,5 @@ export interface Profile extends ProfileInput {
 	// bare did:jwk, since it supports key rotation and the did:jwk doesn't.
 	didWeb: string | null;
 	trustRegistryEnrollments: TrustRegistryEnrollment[];
+	walletVerifications: WalletVerification[];
 }

@@ -20,6 +20,7 @@ import type {
 	Profile,
 	ProfileInput,
 	TrustRegistryEnrollment,
+	WalletVerification,
 	WebauthnCredential,
 } from "~/lib/profile";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
@@ -33,6 +34,7 @@ import {
 	buildIcaVerifiedIdentities,
 	buildManifestDefinition,
 	buildTrustRegistryClaims,
+	buildVerifiedWalletIdentities,
 } from "~/server/signing/manifest-definition";
 import {
 	loadTestSigningCerts,
@@ -65,6 +67,7 @@ interface ProfileDocument extends ProfileInput {
 	webauthnCredential?: WebauthnCredential | null;
 	didWeb?: string | null;
 	trustRegistryEnrollments?: TrustRegistryEnrollment[];
+	walletVerifications?: WalletVerification[];
 }
 
 async function getOwnedProfile(userId: string, id: string): Promise<Profile> {
@@ -86,6 +89,7 @@ async function getOwnedProfile(userId: string, id: string): Promise<Profile> {
 		webauthnCredential: null,
 		didWeb: null,
 		trustRegistryEnrollments: [],
+		walletVerifications: [],
 		...rest,
 	};
 }
@@ -471,7 +475,10 @@ export const manifestRouter = createTRPCRouter({
 				// A linked did:web (see profile.linkDidWeb) supports key rotation;
 				// the bare did:jwk doesn't, so prefer it whenever one is set.
 				issuerDid: profile.didWeb ?? profile.webauthnCredential.issuerDid,
-				verifiedIdentities: buildIcaVerifiedIdentities(profile, verifiedAt),
+				verifiedIdentities: [
+					...buildIcaVerifiedIdentities(profile, verifiedAt),
+					...buildVerifiedWalletIdentities(profile, verifiedAt),
+				],
 				icaOptions: {
 					sigType: "cawg.identity_claims_aggregation",
 					reserveSize: 8192,
