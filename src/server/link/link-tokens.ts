@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { jwtVerify, SignJWT } from "jose";
 import { env } from "~/env";
 
-/** The only product a Link token can be issued for right now. */
-export const LINK_PRODUCTS = ["audacity"] as const;
+/** The tools a Link token can be issued for. */
+export const LINK_PRODUCTS = ["audacity", "opendaw"] as const;
 export type LinkProduct = (typeof LINK_PRODUCTS)[number];
 
 const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
