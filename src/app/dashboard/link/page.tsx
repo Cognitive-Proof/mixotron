@@ -1,11 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { LINK_PRODUCT_LABELS } from "~/lib/link-products";
 import { api } from "~/trpc/react";
-
-const PRODUCT_LABELS: Record<string, string> = {
-	audacity: "Audacity",
-};
+import type { LinkProduct } from "~/server/link/link-tokens";
 
 function formatDate(date: Date | string): string {
 	return new Date(date).toLocaleDateString(undefined, {
@@ -21,7 +19,7 @@ export default function LinkPage() {
 	const tokens = data ?? [];
 	const isReady = !isPending;
 
-	const [product, setProduct] = useState("audacity");
+	const [product, setProduct] = useState<LinkProduct>("audacity");
 	const [justCreated, setJustCreated] = useState<string | null>(null);
 	const [copied, setCopied] = useState(false);
 
@@ -49,23 +47,22 @@ export default function LinkPage() {
 
 			<div className="dash-card" style={{ marginBottom: "1.5rem" }}>
 				<h3>New token</h3>
-				<p className="field-hint" style={{ marginBottom: "0.8rem" }}>
-					Only Audacity works today — more tools are coming.
-				</p>
 				<div style={{ display: "flex", gap: "0.6rem", alignItems: "center" }}>
 					<select
 						aria-label="Product"
-						onChange={(e) => setProduct(e.target.value)}
+						onChange={(e) => setProduct(e.target.value as LinkProduct)}
 						value={product}
 					>
-						<option value="audacity">Audacity</option>
+						{Object.entries(LINK_PRODUCT_LABELS).map(([value, label]) => (
+							<option key={value} value={value}>
+								{label}
+							</option>
+						))}
 					</select>
 					<button
 						className="btn btn-primary"
 						disabled={createToken.isPending}
-						onClick={() =>
-							createToken.mutate({ product: product as "audacity" })
-						}
+						onClick={() => createToken.mutate({ product })}
 						type="button"
 					>
 						{createToken.isPending ? "Creating…" : "Create token"}
@@ -76,7 +73,8 @@ export default function LinkPage() {
 					<div className="field" style={{ marginTop: "1rem" }}>
 						<span className="field-hint">
 							Copy this token now — you won&apos;t be able to see it again.
-							Paste it into Audacity&apos;s Mix-O-Tron export settings.
+							Paste it into {LINK_PRODUCT_LABELS[product]}&apos;s Mix-O-Tron
+							export settings.
 						</span>
 						<div style={{ display: "flex", gap: "0.6rem" }}>
 							<input readOnly type="text" value={justCreated} />
@@ -108,7 +106,7 @@ export default function LinkPage() {
 					return (
 						<div className="dash-card" key={token.id}>
 							<span className="badge">
-								{PRODUCT_LABELS[token.product] ?? token.product}
+								{LINK_PRODUCT_LABELS[token.product] ?? token.product}
 							</span>
 							<dl className="dash-dl">
 								<dt>Created</dt>
