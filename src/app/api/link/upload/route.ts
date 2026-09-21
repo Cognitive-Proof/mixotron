@@ -15,8 +15,20 @@ const ingredientSchema = z.object({
 	sha256: z.string().min(1),
 });
 
+// Called from arbitrary Link tool origins (Audacity's embedded browser, openDAW's own web app,
+// future tools), authenticated by bearer token rather than cookies, so a wildcard origin is safe.
+const corsHeaders = {
+	"Access-Control-Allow-Origin": "*",
+	"Access-Control-Allow-Methods": "POST, OPTIONS",
+	"Access-Control-Allow-Headers": "Authorization, Content-Type",
+};
+
+export function OPTIONS(): Response {
+	return new Response(null, { status: 204, headers: corsHeaders });
+}
+
 function errorResponse(status: number, message: string): Response {
-	return Response.json({ error: message }, { status });
+	return Response.json({ error: message }, { status, headers: corsHeaders });
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -103,5 +115,5 @@ export async function POST(request: Request): Promise<Response> {
 	const baseUrl = env.BETTER_AUTH_URL ?? new URL(request.url).origin;
 	const url = `${baseUrl}/dashboard/link/upload/${uploadDoc._id.toString()}`;
 
-	return Response.json({ url });
+	return Response.json({ url }, { headers: corsHeaders });
 }
