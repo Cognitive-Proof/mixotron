@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { type DragEvent, useRef, useState } from "react";
 import { fileToBase64 } from "~/lib/client-file";
+import { LINK_PRODUCT_LABELS } from "~/lib/link-products";
 import { api } from "~/trpc/react";
 
 function truncateHash(hash: string): string {
@@ -70,8 +71,9 @@ export default function LinkUploadPage() {
 				<div className="eyebrow">Link</div>
 				<h1>{upload.name}</h1>
 				<p>
-					Uploaded from Audacity. Review the ingredients below, then continue
-					into Author to finish the Content Credential.
+					Uploaded from {LINK_PRODUCT_LABELS[upload.product] ?? upload.product}.
+					Review the ingredients below, then continue into Author to finish
+					the Content Credential.
 				</p>
 			</div>
 

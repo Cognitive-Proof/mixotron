@@ -95,4 +95,8 @@ export type VerifyForDisplayResult =
 			fileName: string;
 			format: SupportedVerifyFormat;
 			outcome: DisplayVerificationOutcome;
+			/** Whether the asset carried at least one C2PA manifest at all —
+			 * cheaper than inspecting `outcome` for callers that just need a
+			 * yes/no (e.g. checking a claim against reality). */
+			hasManifest: boolean;
 	  };

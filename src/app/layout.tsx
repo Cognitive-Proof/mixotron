@@ -1,6 +1,7 @@
 import "~/styles/globals.css";
 import "c2pa-react-component/style.css";
 import "c2pa-react-cawg-component/style.css";
+import "@cognitiveproof/c2pa-react-ddex-component/style.css";
 
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans, Unbounded } from "next/font/google";

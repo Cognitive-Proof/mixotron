@@ -32,6 +32,13 @@ export interface ManifestDefinitionInput {
 	 * and — separately, in manifest.ts — cawg.identity) is omitted, leaving
 	 * a plain C2PA manifest. */
 	profile: Profile | null;
+	/**
+	 * DDEX (ERN) release metadata captured alongside the manifest, embedded
+	 * as a custom, entity-namespaced assertion (org.mixotron.ddex) — same
+	 * pattern as org.mixotron.description below. Null when the DDEX section
+	 * wasn't enabled. See src/server/ddex/convert.ts for the shape.
+	 */
+	ddex: Record<string, unknown> | null;
 }
 
 const ROLE_TO_SCHEMA_ORG_FIELD: Record<
@@ -254,6 +261,13 @@ export function buildManifestDefinition(
 		assertions.push({
 			label: "org.mixotron.description",
 			data: { description: input.description },
+		});
+	}
+
+	if (input.ddex) {
+		assertions.push({
+			label: "org.mixotron.ddex",
+			data: input.ddex,
 		});
 	}
 

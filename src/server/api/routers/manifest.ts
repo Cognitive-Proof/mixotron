@@ -14,16 +14,24 @@ import {
 	type ManifestIngredientRef,
 	type ManifestVerificationResult,
 	type VerifyForDisplayResult,
+	type VerifyInput,
 	verifyInputSchema,
 } from "~/lib/manifest";
-import type {
-	Profile,
-	ProfileInput,
-	TrustRegistryEnrollment,
-	WebauthnCredential,
+import {
+	type Profile,
+	type ProfileInput,
+	profileInputSchema,
+	type ServerManagedKey,
+	type TrustRegistryEnrollment,
+	type WebauthnCredential,
 } from "~/lib/profile";
-import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
+import {
+	createTRPCRouter,
+	protectedProcedure,
+	publicProcedure,
+} from "~/server/api/trpc";
 import { mongoDb } from "~/server/db/mongo";
+import { toDdexMessage } from "~/server/ddex/convert";
 import {
 	createIcaSigningSession,
 	deleteIcaSigningSession,
@@ -34,6 +42,10 @@ import {
 	buildManifestDefinition,
 	buildTrustRegistryClaims,
 } from "~/server/signing/manifest-definition";
+import {
+	generateServerManagedKey,
+	loadServerManagedKeySeed,
+} from "~/server/signing/profile-key";
 import {
 	loadTestSigningCerts,
 	signContentCredential,
@@ -54,6 +66,30 @@ const aiDisclosureInputSchema = z
 	})
 	.nullable();
 
+/** Mirrors DdexReleaseInput (src/server/ddex/convert.ts) minus `title`,
+ * which the walkthrough's produceWalkthrough input already carries
+ * separately, plus `artistName` since DDEX needs one even when no CAWG
+ * profile is being created alongside it. */
+const ddexInputSchema = z
+	.object({
+		artistName: z.string(),
+		isrc: z.string(),
+		releaseIdentifierType: z.string(),
+		releaseIdentifierValue: z.string(),
+		label: z.string(),
+		genre: z.string(),
+		parentalWarning: z.string(),
+		pLine: z.string(),
+		cLine: z.string(),
+		territory: z.string(),
+		commercialModelType: z.string(),
+		useType: z.string(),
+		price: z.string(),
+		currency: z.string(),
+		dealStartDate: z.string(),
+	})
+	.nullable();
+
 interface ProfileDocument extends ProfileInput {
 	_id: ObjectId;
 	userId: string;
@@ -65,9 +101,16 @@ interface ProfileDocument extends ProfileInput {
 	webauthnCredential?: WebauthnCredential | null;
 	didWeb?: string | null;
 	trustRegistryEnrollments?: TrustRegistryEnrollment[];
+	// Full shape, including the encrypted seed — never returned to the
+	// client. getOwnedProfile() strips it down to just the issuerDid; use
+	// getOwnedProfileSigningKey() when the actual seed is needed for signing.
+	serverManagedKey?: ServerManagedKey | null;
 }
 
-async function getOwnedProfile(userId: string, id: string): Promise<Profile> {
+async function findOwnedProfileDoc(
+	userId: string,
+	id: string,
+): Promise<ProfileDocument> {
 	let objectId: ObjectId;
 	try {
 		objectId = new ObjectId(id);
@@ -80,13 +123,21 @@ async function getOwnedProfile(userId: string, id: string): Promise<Profile> {
 	if (!doc) {
 		throw new TRPCError({ code: "NOT_FOUND", message: "Profile not found" });
 	}
-	const { _id, ...rest } = doc;
+	return doc;
+}
+
+async function getOwnedProfile(userId: string, id: string): Promise<Profile> {
+	const doc = await findOwnedProfileDoc(userId, id);
+	const { _id, serverManagedKey, ...rest } = doc;
 	return {
 		id: _id.toString(),
 		webauthnCredential: null,
 		didWeb: null,
 		trustRegistryEnrollments: [],
 		...rest,
+		serverManagedKey: serverManagedKey
+			? { issuerDid: serverManagedKey.issuerDid }
+			: null,
 	};
 }
 
@@ -122,6 +173,71 @@ function toResult(
 		manifestId: doc.manifestId,
 		claimGenerator: doc.claimGenerator,
 		ingredients: doc.ingredients,
+	};
+}
+
+/**
+ * Shared by verifyForDisplay and verifyPublic — both reshape the same
+ * verifyAsset()/verifyIdentityAssertions() outcome for c2pa-react-component,
+ * differing only in whether a session is required to call them.
+ */
+async function runVerifyForDisplay(
+	input: VerifyInput,
+): Promise<VerifyForDisplayResult> {
+	const format = detectVerifyFormat(input.fileName);
+	if (!format) {
+		return {
+			supported: false,
+			fileName: input.fileName,
+			format: input.fileName.split(".").pop() ?? "unknown",
+		};
+	}
+
+	const bytes = Buffer.from(input.dataBase64, "base64");
+
+	let outcome: Awaited<ReturnType<typeof verifyAsset>>;
+	try {
+		outcome = await verifyAsset(format, bytes, getTrustedCertificates());
+	} catch (error) {
+		// Same as manifestRouter.verify: verifyAsset() throws when the asset
+		// carries no C2PA manifest at all, not just on a genuine read
+		// failure — so an asset of a supported format is "no manifest
+		// present", not "unsupported".
+		console.warn(
+			`[manifest] verifyAsset found no manifest for "${input.fileName}" — treating as no manifest present.`,
+			error,
+		);
+		return {
+			supported: true,
+			fileName: input.fileName,
+			format,
+			hasManifest: false,
+			outcome: toDisplayOutcome({
+				state: false,
+				manifests: [],
+				manifestStore: undefined,
+			}),
+		};
+	}
+
+	// verifyAsset() alone doesn't surface cawg.identity — it needs this
+	// separate call. An asset with no identity assertion at all is
+	// expected (most are), so a failure here just means "no identity data
+	// to merge in", not a verification failure.
+	const identityOutcome = await verifyIdentityAssertions(
+		format,
+		bytes,
+		getTrustedCertificates(),
+	).catch(() => null);
+
+	return {
+		supported: true,
+		fileName: input.fileName,
+		format,
+		hasManifest: outcome.manifests.length > 0,
+		outcome: toDisplayOutcome(
+			mergeIdentityAssertions(outcome, identityOutcome),
+		),
 	};
 }
 
@@ -209,50 +325,22 @@ export const manifestRouter = createTRPCRouter({
 	 */
 	verifyForDisplay: protectedProcedure
 		.input(verifyInputSchema)
-		.mutation(async ({ input }): Promise<VerifyForDisplayResult> => {
-			const format = detectVerifyFormat(input.fileName);
-			if (!format) {
-				return {
-					supported: false,
-					fileName: input.fileName,
-					format: input.fileName.split(".").pop() ?? "unknown",
-				};
-			}
+		.mutation(
+			async ({ input }): Promise<VerifyForDisplayResult> =>
+				runVerifyForDisplay(input),
+		),
 
-			const bytes = Buffer.from(input.dataBase64, "base64");
-			try {
-				const outcome = await verifyAsset(
-					format,
-					bytes,
-					getTrustedCertificates(),
-				);
-
-				// verifyAsset() alone doesn't surface cawg.identity — it needs
-				// this separate call. An asset with no identity assertion at all
-				// is expected (most are), so a failure here just means "no
-				// identity data to merge in", not a verification failure.
-				const identityOutcome = await verifyIdentityAssertions(
-					format,
-					bytes,
-					getTrustedCertificates(),
-				).catch(() => null);
-
-				return {
-					supported: true,
-					fileName: input.fileName,
-					format,
-					outcome: toDisplayOutcome(
-						mergeIdentityAssertions(outcome, identityOutcome),
-					),
-				};
-			} catch (error) {
-				throw new TRPCError({
-					code: "BAD_REQUEST",
-					message: `Couldn't read "${input.fileName}" as ${format}.`,
-					cause: error,
-				});
-			}
-		}),
+	/**
+	 * Same as verifyForDisplay, but public — backs the no-login walkthrough
+	 * pages (e.g. /walkthrough/verify/[claim]), which need real verification
+	 * without asking a first-time visitor to create an account.
+	 */
+	verifyPublic: publicProcedure
+		.input(verifyInputSchema)
+		.mutation(
+			async ({ input }): Promise<VerifyForDisplayResult> =>
+				runVerifyForDisplay(input),
+		),
 
 	/**
 	 * Live TRQP authorization check for one trust_registry entry — called
@@ -272,7 +360,7 @@ export const manifestRouter = createTRPCRouter({
 	 * SSRF opening, and Governorator is the only registry mixotron
 	 * integrates with today anyway.
 	 */
-	checkTrustRegistryAuthorization: protectedProcedure
+	checkTrustRegistryAuthorization: publicProcedure
 		.input(
 			z.object({
 				entityId: z.string().min(1),
@@ -351,6 +439,7 @@ export const manifestRouter = createTRPCRouter({
 				actions: input.actions,
 				aiDisclosure: input.aiDisclosure,
 				profile,
+				ddex: null,
 			});
 
 			const verifiedAt = new Date().toISOString();
@@ -395,6 +484,377 @@ export const manifestRouter = createTRPCRouter({
 				fileName: `signed-${input.fileName}`,
 				manifestId,
 				skippedIngredients,
+			};
+		}),
+
+	/**
+	 * The walkthrough's single-file signing point
+	 * (/walkthrough/rights-holder/addManifest) — no ingredients, always
+	 * c2pa.created, and two things `produce` doesn't do:
+	 *
+	 * - Refuses to sign a file that already carries a C2PA manifest, since
+	 *   this endpoint exists to produce a *first* Content Credential, not
+	 *   add another one.
+	 * - `cawgProfile`, if provided, is fresh ProfileInput fields to create a
+	 *   brand new profile with a server-managed signing key (see
+	 *   profile-key.ts) rather than referencing an existing profileId — the
+	 *   walkthrough's CAWG section always authors a new identity inline,
+	 *   the same way the real Profile form does, but without a WebAuthn
+	 *   ceremony.
+	 */
+	produceWalkthrough: protectedProcedure
+		.input(
+			z.object({
+				fileName: z.string().min(1),
+				dataBase64: z.string().min(1),
+				title: z.string().min(1),
+				description: z.string(),
+				digitalSourceTypes: z.array(z.string()).min(1),
+				actions: z.array(z.string()),
+				aiDisclosure: aiDisclosureInputSchema,
+				ddex: ddexInputSchema,
+				cawgProfile: profileInputSchema.nullable(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const format = detectVerifyFormat(input.fileName);
+			if (!format) {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: `"${input.fileName}" isn't a format the signing library supports yet.`,
+				});
+			}
+
+			const bytes = Buffer.from(input.dataBase64, "base64");
+
+			// verifyAsset() throwing means no manifest was found (see the
+			// identical logic and comment on runVerifyForDisplay above) — that's
+			// the success case here. Finding one means we refuse to proceed.
+			try {
+				const existing = await verifyAsset(
+					format,
+					bytes,
+					getTrustedCertificates(),
+				);
+				if (existing.manifests.length > 0) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: `"${input.fileName}" already contains a C2PA manifest — this signs a first Content Credential onto a clean file only.`,
+					});
+				}
+			} catch (error) {
+				if (error instanceof TRPCError) throw error;
+			}
+
+			// c2pa.created only ever carries one digitalSourceType — the
+			// walkthrough's picker allows multiple selections for teaching
+			// purposes, so the first one picked is the one that's actually
+			// signed.
+			const digitalSourceType = input.digitalSourceTypes[0];
+			if (!digitalSourceType) {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: "Select at least one digital source type.",
+				});
+			}
+
+			let profile: Profile | null = null;
+			let signingKey: ServerManagedKey | null = null;
+			if (input.cawgProfile) {
+				const now = new Date();
+				signingKey = generateServerManagedKey();
+				const doc: Omit<ProfileDocument, "_id"> = {
+					...input.cawgProfile,
+					userId: ctx.session.user.id,
+					createdAt: now,
+					updatedAt: now,
+					serverManagedKey: signingKey,
+				};
+				const inserted = await mongoDb
+					.collection<ProfileDocument>("profiles")
+					.insertOne(doc as ProfileDocument);
+				profile = {
+					id: inserted.insertedId.toString(),
+					webauthnCredential: null,
+					didWeb: null,
+					trustRegistryEnrollments: [],
+					...input.cawgProfile,
+					userId: ctx.session.user.id,
+					createdAt: now,
+					updatedAt: now,
+					serverManagedKey: { issuerDid: signingKey.issuerDid },
+				};
+			}
+
+			const ddexAssertion = input.ddex
+				? toDdexMessage({
+						title: input.title,
+						artistName: input.ddex.artistName || profile?.displayName || "",
+						isrc: input.ddex.isrc,
+						releaseIdentifierType: input.ddex.releaseIdentifierType,
+						releaseIdentifierValue: input.ddex.releaseIdentifierValue,
+						label: input.ddex.label,
+						genre: input.ddex.genre,
+						parentalWarning: input.ddex.parentalWarning,
+						pLine: input.ddex.pLine,
+						cLine: input.ddex.cLine,
+						territory: input.ddex.territory,
+						commercialModelType: input.ddex.commercialModelType,
+						useType: input.ddex.useType,
+						price: input.ddex.price,
+						currency: input.ddex.currency,
+						dealStartDate: input.ddex.dealStartDate,
+					})
+				: null;
+
+			const manifestDefinition = buildManifestDefinition({
+				title: input.title,
+				description: input.description,
+				creationOrigin: "created",
+				digitalSourceType,
+				actions: input.actions,
+				aiDisclosure: input.aiDisclosure,
+				profile,
+				ddex: ddexAssertion as unknown as Record<string, unknown> | null,
+			});
+
+			const verifiedAt = new Date().toISOString();
+
+			const result = await signContentCredential({
+				format,
+				asset: bytes,
+				manifestDefinition,
+				ingredients: [],
+				identity:
+					profile && signingKey
+						? {
+								roles: [
+									...(profile.defaultRoles.length > 0
+										? profile.defaultRoles
+										: (["cawg.creator"] as const)),
+								],
+								verifiedIdentities: buildIcaVerifiedIdentities(
+									profile,
+									verifiedAt,
+								),
+								issuer: {
+									did: signingKey.issuerDid,
+									privateKey: loadServerManagedKeySeed(signingKey),
+								},
+							}
+						: null,
+			});
+
+			let manifestId: string | null = null;
+			try {
+				const outcome = await verifyAsset(
+					format,
+					result.signedAsset,
+					getTrustedCertificates(),
+				);
+				manifestId = outcome.manifests[0]?.id ?? null;
+			} catch (error) {
+				console.warn(
+					"[manifest] Could not re-verify freshly signed asset",
+					error,
+				);
+			}
+
+			return {
+				signedAssetBase64: Buffer.from(result.signedAsset).toString("base64"),
+				fileName: `signed-${input.fileName}`,
+				manifestId,
+				profileId: profile?.id ?? null,
+			};
+		}),
+
+	/**
+	 * The walkthrough's update-an-existing-manifest signing point
+	 * (/walkthrough/rights-holder/updateManifest) — the mirror image of
+	 * produceWalkthrough above:
+	 *
+	 * - Refuses to sign a file that does *not* already carry a C2PA
+	 *   manifest, since this endpoint exists to update one, not produce a
+	 *   first one.
+	 * - Always signs with creationOrigin "opened" — the uploaded file
+	 *   (already-manifested bytes) is embedded as its own sole ingredient
+	 *   with relationship "parentOf", so the new manifest's provenance
+	 *   chain records the previous manifest as its parent. Same pattern
+	 *   c2pa-rs-javascript-library's own ingredient tests use: sign once,
+	 *   then re-sign those same signed bytes as both the asset being signed
+	 *   and the ingredient recording what it was signed from.
+	 * - Like produceWalkthrough, no digital source type picker — "opened"
+	 *   always forces digitalSourceType to digitalCreation (see
+	 *   buildManifestDefinition), so nothing meaningful would be picked.
+	 * - Because ingredients are present, `identity` is passed through for
+	 *   parity with produceWalkthrough but c2pa-rs-javascript-library's
+	 *   signAssetWithIngredients doesn't accept ICA options at all (see the
+	 *   comment on SignRequest.identity in sign.ts) — a cawg.identity
+	 *   assertion never gets embedded here, same limitation as `produce`'s
+	 *   ingredient path. The CreativeWork/training-mining/XMP assertions a
+	 *   profile adds via buildManifestDefinition still apply regardless.
+	 */
+	produceUpdateWalkthrough: protectedProcedure
+		.input(
+			z.object({
+				fileName: z.string().min(1),
+				dataBase64: z.string().min(1),
+				title: z.string().min(1),
+				description: z.string(),
+				actions: z.array(z.string()),
+				aiDisclosure: aiDisclosureInputSchema,
+				ddex: ddexInputSchema,
+				cawgProfile: profileInputSchema.nullable(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const format = detectVerifyFormat(input.fileName);
+			if (!format) {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: `"${input.fileName}" isn't a format the signing library supports yet.`,
+				});
+			}
+
+			const bytes = Buffer.from(input.dataBase64, "base64");
+
+			const noExistingManifestError = new TRPCError({
+				code: "BAD_REQUEST",
+				message: `"${input.fileName}" doesn't contain a C2PA manifest yet — use Add a Manifest to sign a first Content Credential onto it.`,
+			});
+
+			// verifyAsset() throwing means no manifest was found (see the
+			// identical logic and comment on runVerifyForDisplay above) — that's
+			// the failure case here, inverted from produceWalkthrough. Finding
+			// one is what lets us proceed.
+			try {
+				const existing = await verifyAsset(
+					format,
+					bytes,
+					getTrustedCertificates(),
+				);
+				if (existing.manifests.length === 0) {
+					throw noExistingManifestError;
+				}
+			} catch (error) {
+				if (error instanceof TRPCError) throw error;
+				throw noExistingManifestError;
+			}
+
+			let profile: Profile | null = null;
+			let signingKey: ServerManagedKey | null = null;
+			if (input.cawgProfile) {
+				const now = new Date();
+				signingKey = generateServerManagedKey();
+				const doc: Omit<ProfileDocument, "_id"> = {
+					...input.cawgProfile,
+					userId: ctx.session.user.id,
+					createdAt: now,
+					updatedAt: now,
+					serverManagedKey: signingKey,
+				};
+				const inserted = await mongoDb
+					.collection<ProfileDocument>("profiles")
+					.insertOne(doc as ProfileDocument);
+				profile = {
+					id: inserted.insertedId.toString(),
+					webauthnCredential: null,
+					didWeb: null,
+					trustRegistryEnrollments: [],
+					...input.cawgProfile,
+					userId: ctx.session.user.id,
+					createdAt: now,
+					updatedAt: now,
+					serverManagedKey: { issuerDid: signingKey.issuerDid },
+				};
+			}
+
+			const ddexAssertion = input.ddex
+				? toDdexMessage({
+						title: input.title,
+						artistName: input.ddex.artistName || profile?.displayName || "",
+						isrc: input.ddex.isrc,
+						releaseIdentifierType: input.ddex.releaseIdentifierType,
+						releaseIdentifierValue: input.ddex.releaseIdentifierValue,
+						label: input.ddex.label,
+						genre: input.ddex.genre,
+						parentalWarning: input.ddex.parentalWarning,
+						pLine: input.ddex.pLine,
+						cLine: input.ddex.cLine,
+						territory: input.ddex.territory,
+						commercialModelType: input.ddex.commercialModelType,
+						useType: input.ddex.useType,
+						price: input.ddex.price,
+						currency: input.ddex.currency,
+						dealStartDate: input.ddex.dealStartDate,
+					})
+				: null;
+
+			const manifestDefinition = buildManifestDefinition({
+				title: input.title,
+				description: input.description,
+				creationOrigin: "opened",
+				digitalSourceType: "",
+				actions: input.actions,
+				aiDisclosure: input.aiDisclosure,
+				profile,
+				ddex: ddexAssertion as unknown as Record<string, unknown> | null,
+			});
+
+			const verifiedAt = new Date().toISOString();
+
+			const result = await signContentCredential({
+				format,
+				asset: bytes,
+				manifestDefinition,
+				ingredients: [
+					{
+						format,
+						asset: bytes,
+						title: input.fileName,
+						relationship: "parentOf",
+					},
+				],
+				identity:
+					profile && signingKey
+						? {
+								roles: [
+									...(profile.defaultRoles.length > 0
+										? profile.defaultRoles
+										: (["cawg.creator"] as const)),
+								],
+								verifiedIdentities: buildIcaVerifiedIdentities(
+									profile,
+									verifiedAt,
+								),
+								issuer: {
+									did: signingKey.issuerDid,
+									privateKey: loadServerManagedKeySeed(signingKey),
+								},
+							}
+						: null,
+			});
+
+			let manifestId: string | null = null;
+			try {
+				const outcome = await verifyAsset(
+					format,
+					result.signedAsset,
+					getTrustedCertificates(),
+				);
+				manifestId = outcome.manifests[0]?.id ?? null;
+			} catch (error) {
+				console.warn(
+					"[manifest] Could not re-verify freshly signed asset",
+					error,
+				);
+			}
+
+			return {
+				signedAssetBase64: Buffer.from(result.signedAsset).toString("base64"),
+				fileName: `updated-${input.fileName}`,
+				manifestId,
+				profileId: profile?.id ?? null,
 			};
 		}),
 
@@ -452,6 +912,7 @@ export const manifestRouter = createTRPCRouter({
 				actions: input.actions,
 				aiDisclosure: input.aiDisclosure,
 				profile,
+				ddex: null,
 			});
 
 			const roles =
