@@ -3,6 +3,7 @@ import { AuthButton } from "~/app/_components/marketing/auth-button";
 
 const LINKS = [
 	{ href: "/info", label: "Guidance" },
+	{ href: "/walkthrough", label: "Walkthrough" },
 	{ href: "#features", label: "Features" },
 	{ href: "#how-it-works", label: "How It Works" },
 	{ href: "#licensing", label: "Licensing" },

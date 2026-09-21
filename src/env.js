@@ -35,6 +35,16 @@ export const env = createEnv({
 			process.env.NODE_ENV === "production"
 				? z.string()
 				: z.string().optional(),
+		// Encrypts the private key for a "server-managed" profile identity —
+		// one whose CAWG signing key is generated and held server-side instead
+		// of derived from a WebAuthn device credential (see
+		// src/server/signing/profile-key.ts). Separate from BETTER_AUTH_SECRET
+		// and LINK_TOKEN_SECRET on purpose, same reasoning as LINK_TOKEN_SECRET:
+		// a leak of one secret shouldn't compromise the others.
+		PROFILE_KEY_ENCRYPTION_SECRET:
+			process.env.NODE_ENV === "production"
+				? z.string()
+				: z.string().optional(),
 		// GCS bucket name for storing files uploaded via /api/link/upload. When
 		// unset, uploads are written to the local filesystem instead — fine for
 		// dev, but Cloud Run's filesystem is ephemeral, so this must be set in
@@ -68,6 +78,7 @@ export const env = createEnv({
 		SIGN_O_TRON_URL: process.env.SIGN_O_TRON_URL,
 		SIGN_O_TRON_API_KEY: process.env.SIGN_O_TRON_API_KEY,
 		LINK_TOKEN_SECRET: process.env.LINK_TOKEN_SECRET,
+		PROFILE_KEY_ENCRYPTION_SECRET: process.env.PROFILE_KEY_ENCRYPTION_SECRET,
 		MIX_O_TRON_UPLOAD_BUCKET: process.env.MIX_O_TRON_UPLOAD_BUCKET,
 		NODE_ENV: process.env.NODE_ENV,
 		// NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
