@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { LINK_PRODUCT_LABELS } from "~/lib/link-products";
-import { api } from "~/trpc/react";
 import type { LinkProduct } from "~/server/link/link-tokens";
+import { api } from "~/trpc/react";
 
 function formatDate(date: Date | string): string {
 	return new Date(date).toLocaleDateString(undefined, {
