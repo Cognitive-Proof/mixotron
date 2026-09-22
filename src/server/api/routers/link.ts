@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { ObjectId } from "mongodb";
 import { z } from "zod";
+import { extensionForFormat } from "~/lib/manifest";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { mongoDb } from "~/server/db/mongo";
 import {
@@ -179,7 +180,7 @@ export const linkRouter = createTRPCRouter({
 			const bytes = await readUploadedFile(doc.fileId, doc.storage);
 			return {
 				name: doc.name,
-				fileName: `${doc.name}.wav`,
+				fileName: `${doc.name}.${extensionForFormat(doc.contentType)}`,
 				contentType: doc.contentType,
 				dataBase64: bytes.toString("base64"),
 			};
