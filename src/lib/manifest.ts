@@ -71,9 +71,7 @@ const FORMAT_TO_EXTENSION: Record<SupportedVerifyFormat, string> = {
  * guessing wrong (see downloadUpload in link.ts, which hardcoded ".wav"
  * regardless of the actual upload's content type until this existed). */
 export function extensionForFormat(contentType: string): string {
-	return (
-		(FORMAT_TO_EXTENSION as Record<string, string>)[contentType] ?? "bin"
-	);
+	return (FORMAT_TO_EXTENSION as Record<string, string>)[contentType] ?? "bin";
 }
 
 export const MANIFEST_STATUS_VALUES = [
