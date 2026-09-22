@@ -745,7 +745,12 @@ export default function AuthorPage() {
 								<path d="M12 16V4M7 9l5-5 5 5" />
 								<path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
 							</svg>
-							{finishedFile ? (
+							{linkUploadId && linkUpload.isPending ? (
+								<>
+									<strong>Loading your exported mix…</strong>
+									<span>Fetching the file from your Link upload</span>
+								</>
+							) : finishedFile ? (
 								<>
 									<strong>{finishedFile.name}</strong>
 									<span>{formatSize(finishedFile.size)}</span>
