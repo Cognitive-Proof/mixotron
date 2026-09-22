@@ -50,6 +50,14 @@ export const env = createEnv({
 		// dev, but Cloud Run's filesystem is ephemeral, so this must be set in
 		// production or uploaded files disappear on the next deploy/restart.
 		MIX_O_TRON_UPLOAD_BUCKET: z.string().optional(),
+		// The water-marker Cloud Run service (audiowmark-based). Restricted —
+		// not --allow-unauthenticated — so calls need a Google-signed identity
+		// token audienced to this URL (see src/server/watermark/client.ts),
+		// which requires this service's own runtime identity (or, locally,
+		// `gcloud auth application-default login`) to hold roles/run.invoker
+		// on it. When unset, watermark detection/embedding is disabled but the
+		// rest of the dashboard page still renders.
+		WATER_MARKER_URL: z.string().optional(),
 		NODE_ENV: z
 			.enum(["development", "test", "production"])
 			.default("development"),
@@ -80,6 +88,7 @@ export const env = createEnv({
 		LINK_TOKEN_SECRET: process.env.LINK_TOKEN_SECRET,
 		PROFILE_KEY_ENCRYPTION_SECRET: process.env.PROFILE_KEY_ENCRYPTION_SECRET,
 		MIX_O_TRON_UPLOAD_BUCKET: process.env.MIX_O_TRON_UPLOAD_BUCKET,
+		WATER_MARKER_URL: process.env.WATER_MARKER_URL,
 		NODE_ENV: process.env.NODE_ENV,
 		// NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
 	},
