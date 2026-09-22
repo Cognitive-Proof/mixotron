@@ -142,6 +142,12 @@ export default function WatermarkPage() {
 				type="file"
 			/>
 
+			{inspect.error && (
+				<p className="form-error" style={{ marginTop: "1rem" }}>
+					Couldn&apos;t check this file: {inspect.error.message}
+				</p>
+			)}
+
 			{file && (
 				<div className="dash-card" style={{ marginTop: "1.5rem" }}>
 					<div className="verify-item-header">
@@ -193,6 +199,12 @@ export default function WatermarkPage() {
 								>
 									{file.adding ? "Adding watermark…" : "Add Watermark"}
 								</button>
+							)}
+
+							{addWatermark.error && (
+								<p className="form-error" style={{ marginTop: "0.6rem" }}>
+									Couldn&apos;t add the watermark: {addWatermark.error.message}
+								</p>
 							)}
 
 							{file.added && (
