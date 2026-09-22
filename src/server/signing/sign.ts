@@ -21,6 +21,14 @@ export interface SignIngredientInput {
 export interface SignIdentityInput {
 	verifiedIdentities: IcaVerifiedIdentity[];
 	roles: string[];
+	/**
+	 * Overrides the shared "self-attested" ICA issuer (ICA_ISSUER_DID /
+	 * ICA_ISSUER_PRIVATE_KEY below) with a specific profile's own key — used
+	 * for a server-managed profile (see profile-key.ts), which has its own
+	 * generated Ed25519 seed rather than sharing mixotron's bundled one.
+	 * Omit to keep using the shared key, same as before this field existed.
+	 */
+	issuer?: { did: string; privateKey: Uint8Array };
 }
 
 export interface SignRequest {
@@ -109,8 +117,9 @@ async function signViaLocalTestCerts(
 	if (request.ingredients.length === 0) {
 		const identityFields = request.identity
 			? {
-					issuerDid: ICA_ISSUER_DID,
-					issuerPrivateKey: ICA_ISSUER_PRIVATE_KEY,
+					issuerDid: request.identity.issuer?.did ?? ICA_ISSUER_DID,
+					issuerPrivateKey:
+						request.identity.issuer?.privateKey ?? ICA_ISSUER_PRIVATE_KEY,
 					verifiedIdentities: request.identity.verifiedIdentities,
 					icaOptions: {
 						sigType: "cawg.identity_claims_aggregation",

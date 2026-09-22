@@ -1,5 +1,6 @@
 "use client";
 
+import { DDEXManifest } from "@cognitiveproof/c2pa-react-ddex-component";
 import { CAWGManifest } from "c2pa-react-cawg-component";
 import { C2paManifest } from "c2pa-react-component";
 import { type DragEvent, useRef, useState } from "react";
@@ -154,7 +155,7 @@ export default function VerifyPage() {
 							<C2paManifest
 								level={3}
 								manifest={item.result.outcome}
-								plugin={[CAWGManifest]}
+								plugin={[CAWGManifest, DDEXManifest]}
 							/>
 						)}
 					</div>

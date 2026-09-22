@@ -74,6 +74,7 @@ export const midiRouter = createTRPCRouter({
 				aiDisclosure: null,
 				hashOnlyIngredients: [],
 				profile: null,
+				ddex: null,
 			});
 
 			const result = await signContentCredential({

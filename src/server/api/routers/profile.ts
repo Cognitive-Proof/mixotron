@@ -7,12 +7,14 @@ import {
 	type Profile,
 	type ProfileInput,
 	profileInputSchema,
+	type ServerManagedKey,
 	type TrustRegistryEnrollment,
 	type WebauthnCredential,
 	webauthnCredentialSchema,
 } from "~/lib/profile";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { mongoDb } from "~/server/db/mongo";
+import { generateServerManagedKey } from "~/server/signing/profile-key";
 import { queryGovernoratorAuthorization } from "~/server/trust/query-governorator";
 import {
 	DidWebResolutionError,
@@ -32,18 +34,25 @@ interface ProfileDocument extends ProfileInput {
 	webauthnCredential?: WebauthnCredential | null;
 	didWeb?: string | null;
 	trustRegistryEnrollments?: TrustRegistryEnrollment[];
+	// Full shape, including the encrypted seed — never returned to the
+	// client as-is. See toProfile(), which strips it down to just the
+	// issuerDid before handing a Profile back.
+	serverManagedKey?: ServerManagedKey | null;
 }
 
 const profiles = () => mongoDb.collection<ProfileDocument>("profiles");
 
 function toProfile(doc: ProfileDocument): Profile {
-	const { _id, ...rest } = doc;
+	const { _id, serverManagedKey, ...rest } = doc;
 	return {
 		id: _id.toString(),
 		webauthnCredential: null,
 		didWeb: null,
 		trustRegistryEnrollments: [],
 		...rest,
+		serverManagedKey: serverManagedKey
+			? { issuerDid: serverManagedKey.issuerDid }
+			: null,
 	};
 }
 
@@ -89,6 +98,28 @@ export const profileRouter = createTRPCRouter({
 				userId: ctx.session.user.id,
 				createdAt: now,
 				updatedAt: now,
+			};
+			const result = await profiles().insertOne(doc as ProfileDocument);
+			return toProfile({ ...doc, _id: result.insertedId });
+		}),
+
+	/**
+	 * Same as create, but generates a server-managed signing key instead of
+	 * requiring a WebAuthn device credential — used by the walkthrough's
+	 * "Enable CAWG identity" flow, so a new profile can sign immediately
+	 * without a passkey ceremony. See ~/lib/profile's ServerManagedKey doc
+	 * comment for the assurance tradeoff this represents.
+	 */
+	createWithServerManagedKey: protectedProcedure
+		.input(profileInputSchema)
+		.mutation(async ({ ctx, input }) => {
+			const now = new Date();
+			const doc: Omit<ProfileDocument, "_id"> = {
+				...input,
+				userId: ctx.session.user.id,
+				createdAt: now,
+				updatedAt: now,
+				serverManagedKey: generateServerManagedKey(),
 			};
 			const result = await profiles().insertOne(doc as ProfileDocument);
 			return toProfile({ ...doc, _id: result.insertedId });

@@ -72,8 +72,8 @@ export default function LinkUploadPage() {
 				<h1>{upload.name}</h1>
 				<p>
 					Uploaded from {LINK_PRODUCT_LABELS[upload.product] ?? upload.product}.
-					Review the ingredients below, then continue into Author to finish
-					the Content Credential.
+					Review the ingredients below, then continue into Author to finish the
+					Content Credential.
 				</p>
 			</div>
 

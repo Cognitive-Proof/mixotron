@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LINK_PRODUCT_LABELS } from "~/lib/link-products";
-import { api } from "~/trpc/react";
 import type { LinkProduct } from "~/server/link/link-tokens";
+import { api } from "~/trpc/react";
 
 function formatDate(date: Date | string): string {
 	return new Date(date).toLocaleDateString(undefined, {
@@ -23,6 +23,16 @@ export default function LinkPage() {
 	const [justCreated, setJustCreated] = useState<string | null>(null);
 	const [copied, setCopied] = useState(false);
 	const [urlCopied, setUrlCopied] = useState(false);
+
+	// Read after mount rather than at render time so server and first-client
+	// render match (no window on the server) — the endpoint field just shows
+	// the relative path until this fills in the real origin.
+	const [origin, setOrigin] = useState("");
+	useEffect(() => {
+		setOrigin(window.location.origin);
+	}, []);
+	const uploadEndpoint = `${origin}/api/link/upload`;
+	const [endpointCopied, setEndpointCopied] = useState(false);
 
 	const createToken = api.link.create.useMutation({
 		onSuccess: async (result) => {
@@ -45,6 +55,27 @@ export default function LinkPage() {
 					Connect other tools to Mix-O-Tron. A linked tool uploads a mix here
 					and you finish authoring its Content Credential yourself.
 				</p>
+			</div>
+
+			<div className="dash-card" style={{ marginBottom: "1.5rem" }}>
+				<h3>Endpoint URL</h3>
+				<span className="field-hint">
+					Paste this into the tool&apos;s Mix-O-Tron export settings, alongside
+					a token from below.
+				</span>
+				<div style={{ display: "flex", gap: "0.6rem", marginTop: "0.6rem" }}>
+					<input readOnly type="text" value={uploadEndpoint} />
+					<button
+						className="btn btn-ghost btn-sm"
+						onClick={async () => {
+							await navigator.clipboard.writeText(uploadEndpoint);
+							setEndpointCopied(true);
+						}}
+						type="button"
+					>
+						{endpointCopied ? "Copied" : "Copy"}
+					</button>
+				</div>
 			</div>
 
 			<div className="dash-card" style={{ marginBottom: "1.5rem" }}>

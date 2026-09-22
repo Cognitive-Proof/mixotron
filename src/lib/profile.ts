@@ -170,6 +170,34 @@ export const webauthnCredentialSchema = z.object({
 export type WebauthnCredential = z.infer<typeof webauthnCredentialSchema>;
 
 /**
+ * A "server-managed" profile identity — an alternative to
+ * webauthnCredential for profiles that want to sign without a per-signing
+ * device tap. The private key is generated and held server-side (encrypted
+ * — see src/server/signing/profile-key.ts) rather than derived from a
+ * WebAuthn authenticator, which is a real reduction in assurance: anyone
+ * with both database and PROFILE_KEY_ENCRYPTION_SECRET access can sign as
+ * this profile. Defined here (not in profile-key.ts) so this data shape is
+ * importable from client code without pulling in server-only crypto.
+ *
+ * This full shape (including the encrypted seed) is only ever held in the
+ * Mongo document — never returned to the client. See
+ * ServerManagedKeySummary for what a Profile actually exposes.
+ */
+export interface ServerManagedKey {
+	/** did:key derived from the Ed25519 seed. */
+	issuerDid: string;
+	/** AES-256-GCM ciphertext of the raw 32-byte Ed25519 seed. Only ever
+	 * decrypted server-side. */
+	encryptedSeed: string;
+}
+
+/** What a Profile exposes to the client about its server-managed key —
+ * enough to display/identify it, deliberately missing encryptedSeed. */
+export interface ServerManagedKeySummary {
+	issuerDid: string;
+}
+
+/**
  * A Governorator TRQP enrollment request this profile has signed, kept
  * around after the fact so it's more than a one-off signature (see
  * profile.addTrustRegistryEnrollment). `enabled` controls whether it's
@@ -211,4 +239,8 @@ export interface Profile extends ProfileInput {
 	// bare did:jwk, since it supports key rotation and the did:jwk doesn't.
 	didWeb: string | null;
 	trustRegistryEnrollments: TrustRegistryEnrollment[];
+	/** Set only for profiles created with a server-managed signing key
+	 * instead of a WebAuthn device credential. See ServerManagedKey — this
+	 * is the client-safe summary, not the encrypted key material itself. */
+	serverManagedKey: ServerManagedKeySummary | null;
 }

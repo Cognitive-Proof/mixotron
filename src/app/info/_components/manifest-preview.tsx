@@ -1,5 +1,6 @@
 "use client";
 
+import { DDEXManifest } from "@cognitiveproof/c2pa-react-ddex-component";
 import { C2paManifest } from "c2pa-react-component";
 import type { VerificationOutcome } from "c2pa-react-component-types";
 
@@ -84,13 +85,13 @@ export function ManifestPreview({
 				file
 			</div>
 			<div className="doc-preview-section">
-				<C2paManifest level={3} manifest={outcome} />
+				<C2paManifest level={3} manifest={outcome} plugin={[DDEXManifest]} />
 			</div>
 			<div className="doc-preview-label doc-preview-label--divider">
 				Forensic view
 			</div>
 			<div className="doc-preview-section">
-				<C2paManifest level={4} manifest={outcome} />
+				<C2paManifest level={4} manifest={outcome} plugin={[DDEXManifest]} />
 			</div>
 		</div>
 	);
