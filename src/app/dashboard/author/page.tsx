@@ -257,7 +257,8 @@ export default function AuthorPage() {
 	}
 
 	function addIngredients(files: FileList | File[]) {
-		const room = MAX_INGREDIENTS - ingredients.length - hashOnlyIngredients.length;
+		const room =
+			MAX_INGREDIENTS - ingredients.length - hashOnlyIngredients.length;
 		if (room <= 0) return;
 		const alreadyHasParent = hasParentIngredient;
 		const additions: IngredientFile[] = Array.from(files)
@@ -889,8 +890,8 @@ export default function AuthorPage() {
 							<>
 								<span className="field-hint" style={{ marginTop: "0.8rem" }}>
 									From your DAW export — no matching Content Credential was
-									found, so these will be recorded as ingredients with no
-									active manifest.
+									found, so these will be recorded as ingredients with no active
+									manifest.
 								</span>
 								<ul className="file-list">
 									{hashOnlyIngredients.map((ingredient) => (
