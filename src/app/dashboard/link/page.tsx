@@ -105,18 +105,15 @@ export default function LinkPage() {
 				{justCreated && (
 					<div className="field" style={{ marginTop: "1rem" }}>
 						<span className="field-hint">
-							Endpoint URL — paste this into{" "}
-							{LINK_PRODUCT_LABELS[product]}&apos;s Mix-O-Tron export
-							settings, alongside the token below.
+							Endpoint URL — paste this into {LINK_PRODUCT_LABELS[product]}
+							&apos;s Mix-O-Tron export settings, alongside the token below.
 						</span>
 						<div style={{ display: "flex", gap: "0.6rem" }}>
 							<input readOnly type="text" value={window.location.origin} />
 							<button
 								className="btn btn-ghost btn-sm"
 								onClick={async () => {
-									await navigator.clipboard.writeText(
-										window.location.origin,
-									);
+									await navigator.clipboard.writeText(window.location.origin);
 									setUrlCopied(true);
 								}}
 								type="button"
