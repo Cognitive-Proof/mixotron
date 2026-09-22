@@ -181,7 +181,7 @@ function toResult(
  * verifyAsset()/verifyIdentityAssertions() outcome for c2pa-react-component,
  * differing only in whether a session is required to call them.
  */
-async function runVerifyForDisplay(
+export async function runVerifyForDisplay(
 	input: VerifyInput,
 ): Promise<VerifyForDisplayResult> {
 	const format = detectVerifyFormat(input.fileName);

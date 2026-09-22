@@ -9,6 +9,7 @@ const NAV_LINKS = [
 	{ href: "/dashboard/profile", label: "Profiles" },
 	{ href: "/dashboard/author", label: "Author" },
 	{ href: "/dashboard/verify", label: "Verify" },
+	{ href: "/dashboard/watermark", label: "Watermark" },
 	{ href: "/dashboard/link", label: "Link" },
 	{ href: "/dashboard/sign", label: "Sign" },
 ];
