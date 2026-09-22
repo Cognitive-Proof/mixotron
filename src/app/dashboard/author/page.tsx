@@ -38,6 +38,17 @@ interface IngredientFile {
 	verification: VerificationState;
 }
 
+interface HashOnlyIngredient {
+	id: string;
+	name: string;
+	sha256: string;
+	/** IANA media type — see HashOnlyIngredientInput's doc comment for why
+	 * this is required. Link uploads only ever come from openDAW today,
+	 * whose sample cache is always Wav. */
+	format: string;
+	relationship: IngredientRelationship;
+}
+
 function formatSize(bytes: number) {
 	if (bytes < 1024) return `${bytes} B`;
 	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -128,6 +139,45 @@ export default function AuthorPage() {
 	const [ingredientsActive, setIngredientsActive] = useState(false);
 	const ingredientsInputRef = useRef<HTMLInputElement>(null);
 
+	// Ingredient hashes the Link upload couldn't match to a known manifest —
+	// per Ingredient.adoc, that's a normal case handled by omitting
+	// `activeManifest` rather than something that must be resolved to a file
+	// before the release can be produced.
+	const linkUploadInfo = api.link.getUpload.useQuery(
+		{ uploadId: linkUploadId ?? "" },
+		{ enabled: Boolean(linkUploadId) },
+	);
+	const [hashOnlyIngredients, setHashOnlyIngredients] = useState<
+		HashOnlyIngredient[]
+	>([]);
+	const [hashOnlyIngredientsApplied, setHashOnlyIngredientsApplied] =
+		useState(false);
+	useEffect(() => {
+		if (!linkUploadInfo.data?.ok || hashOnlyIngredientsApplied) return;
+		const unresolved = linkUploadInfo.data.upload.ingredients.filter(
+			(ingredient) => !ingredient.resolved,
+		);
+		setHashOnlyIngredients(
+			unresolved.slice(0, MAX_INGREDIENTS).map((ingredient) => ({
+				id: crypto.randomUUID(),
+				name: ingredient.name,
+				sha256: ingredient.sha256,
+				format: "audio/wav",
+				relationship: "componentOf" as IngredientRelationship,
+			})),
+		);
+		setHashOnlyIngredientsApplied(true);
+	}, [linkUploadInfo.data, hashOnlyIngredientsApplied]);
+
+	function updateHashOnlyIngredientRelationship(
+		id: string,
+		relationship: IngredientRelationship,
+	) {
+		setHashOnlyIngredients((prev) =>
+			prev.map((i) => (i.id === id ? { ...i, relationship } : i)),
+		);
+	}
+
 	const [status, setStatus] = useState<"idle" | "producing" | "produced">(
 		"idle",
 	);
@@ -144,15 +194,17 @@ export default function AuthorPage() {
 	const showAiDisclosure =
 		creationOrigin === "created" &&
 		digitalSourceTypeInvolvesAI(digitalSourceType);
-	const hasParentIngredient = ingredients.some(
-		(i) => i.relationship === "parentOf",
-	);
+	const hasParentIngredient =
+		ingredients.some((i) => i.relationship === "parentOf") ||
+		hashOnlyIngredients.some((i) => i.relationship === "parentOf");
 	// The ICA (device-key) signing path can't carry ingredients — same
 	// limitation as the shared-test-key identity path (see sign.ts) — so a
 	// release with ingredients always falls back to the server test key for
 	// its identity assertion, same as a profile with no device key at all.
 	const useWebAuthnSigning = Boolean(
-		selectedProfile?.webauthnCredential && ingredients.length === 0,
+		selectedProfile?.webauthnCredential &&
+			ingredients.length === 0 &&
+			hashOnlyIngredients.length === 0,
 	);
 	const finishedFormatSupported = finishedFile
 		? Boolean(detectVerifyFormat(finishedFile.name))
@@ -205,11 +257,9 @@ export default function AuthorPage() {
 	}
 
 	function addIngredients(files: FileList | File[]) {
-		const room = MAX_INGREDIENTS - ingredients.length;
+		const room = MAX_INGREDIENTS - ingredients.length - hashOnlyIngredients.length;
 		if (room <= 0) return;
-		const alreadyHasParent = ingredients.some(
-			(i) => i.relationship === "parentOf",
-		);
+		const alreadyHasParent = hasParentIngredient;
 		const additions: IngredientFile[] = Array.from(files)
 			.slice(0, room)
 			.map((file, index) => ({
@@ -307,6 +357,11 @@ export default function AuthorPage() {
 				actions: selectedActions,
 				aiDisclosure,
 				ingredients: ingredientPayloads,
+				hashOnlyIngredients: hashOnlyIngredients.map((ingredient) => ({
+					name: ingredient.name,
+					format: ingredient.format,
+					relationship: ingredient.relationship,
+				})),
 			});
 
 			setSignedResult({
@@ -353,6 +408,7 @@ export default function AuthorPage() {
 		setAiHumanOversight(HUMAN_OVERSIGHT_LEVELS[0]?.value ?? "");
 		setFinishedFile(null);
 		setIngredients([]);
+		setHashOnlyIngredients([]);
 		setStatus("idle");
 		setProduceError(null);
 		setSignedResult(null);
@@ -400,14 +456,18 @@ export default function AuthorPage() {
 						<dd>{finishedFile?.name}</dd>
 						<dt>Ingredients</dt>
 						<dd>
-							{ingredients.length === 0
+							{ingredients.length === 0 && hashOnlyIngredients.length === 0
 								? "None"
-								: ingredients
-										.map(
+								: [
+										...ingredients.map(
 											(i) =>
 												`${i.file.name} (${labelFor(INGREDIENT_RELATIONSHIPS, i.relationship)}, ${verificationSummary(i.verification)})`,
-										)
-										.join(", ")}
+										),
+										...hashOnlyIngredients.map(
+											(i) =>
+												`${i.name} (${labelFor(INGREDIENT_RELATIONSHIPS, i.relationship)}, no manifest)`,
+										),
+									].join(", ")}
 						</dd>
 						{signedResult.skippedIngredients.length > 0 && (
 							<>
@@ -716,7 +776,8 @@ export default function AuthorPage() {
 
 					<div className="field">
 						<label htmlFor="ingredients-input">
-							Ingredients ({ingredients.length} / {MAX_INGREDIENTS})
+							Ingredients ({ingredients.length + hashOnlyIngredients.length} /{" "}
+							{MAX_INGREDIENTS})
 						</label>
 						<button
 							className={`dropzone ${ingredientsActive ? "active" : ""}`}
@@ -822,6 +883,56 @@ export default function AuthorPage() {
 									);
 								})}
 							</ul>
+						)}
+
+						{hashOnlyIngredients.length > 0 && (
+							<>
+								<span className="field-hint" style={{ marginTop: "0.8rem" }}>
+									From your DAW export — no matching Content Credential was
+									found, so these will be recorded as ingredients with no
+									active manifest.
+								</span>
+								<ul className="file-list">
+									{hashOnlyIngredients.map((ingredient) => (
+										<li
+											className="file-chip file-chip--relate"
+											key={ingredient.id}
+										>
+											<span>{ingredient.name}</span>
+											<span className="verify-badge verify-badge--muted">
+												No manifest
+											</span>
+											<select
+												aria-label={`Relationship for ${ingredient.name}`}
+												onChange={(e) =>
+													updateHashOnlyIngredientRelationship(
+														ingredient.id,
+														e.target.value as IngredientRelationship,
+													)
+												}
+												value={ingredient.relationship}
+											>
+												{INGREDIENT_RELATIONSHIPS.map((rel) => (
+													<option key={rel.value} value={rel.value}>
+														{rel.label}
+													</option>
+												))}
+											</select>
+											<button
+												aria-label={`Remove ${ingredient.name}`}
+												onClick={() =>
+													setHashOnlyIngredients((prev) =>
+														prev.filter((i) => i.id !== ingredient.id),
+													)
+												}
+												type="button"
+											>
+												&#215;
+											</button>
+										</li>
+									))}
+								</ul>
+							</>
 						)}
 					</div>
 				</div>

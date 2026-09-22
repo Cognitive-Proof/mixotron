@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
 	addCawgMetadataAssertion,
 	type IcaVerifiedIdentity,
@@ -20,6 +21,25 @@ export interface AiDisclosureInput {
 	humanOversightLevel: string;
 }
 
+/**
+ * An ingredient with no known C2PA manifest — e.g. a sample hash a DAW sent
+ * that doesn't match anything in Mix-O-Tron's verified-manifest store. Per
+ * Ingredient.adoc "Existing manifests" / "Establishing unique identifiers",
+ * this is a normal, spec-sanctioned case: the ingredient assertion simply
+ * omits `activeManifest` rather than forcing the ingredient to be dropped or
+ * treating the hash as something to resolve to a real file.
+ */
+export interface HashOnlyIngredientInput {
+	name: string;
+	/** IANA media type — c2pa-rs-javascript-library's ingredient assertion
+	 * decoder treats `dc:format` as mandatory even though the spec text calls
+	 * it merely recommended (verified empirically: signing throws "the
+	 * assertion had a mandatory field: dc:format that could not be decoded"
+	 * without it). */
+	format: string;
+	relationship: "parentOf" | "componentOf" | "inputTo";
+}
+
 export interface ManifestDefinitionInput {
 	title: string;
 	description: string;
@@ -32,6 +52,7 @@ export interface ManifestDefinitionInput {
 	 * and — separately, in manifest.ts — cawg.identity) is omitted, leaving
 	 * a plain C2PA manifest. */
 	profile: Profile | null;
+	hashOnlyIngredients: HashOnlyIngredientInput[];
 }
 
 const ROLE_TO_SCHEMA_ORG_FIELD: Record<
@@ -249,6 +270,26 @@ export function buildManifestDefinition(
 	const assertions: Record<string, unknown>[] = [
 		{ label: "c2pa.actions", data: { actions } },
 	];
+
+	// No activeManifest, no digitalSourceType (unknown), no data/validationResults —
+	// all optional per spec for an ingredient that was never resolved to an actual
+	// manifest or file. The sha256 that got it here was only ever a lookup key
+	// against Mix-O-Tron's verified-manifest store; it has no defined home in the
+	// assertion itself once that lookup comes back empty.
+	for (const ingredient of input.hashOnlyIngredients) {
+		assertions.push({
+			label: "c2pa.ingredient.v3",
+			data: {
+				relationship: ingredient.relationship,
+				"dc:title": ingredient.name,
+				"dc:format": ingredient.format,
+				// Also enforced as mandatory by the decoder despite the spec text
+				// making it optional when there's a c2pa_manifest — see dc:format's
+				// comment above for how that was confirmed.
+				instanceID: `xmp:iid:${randomUUID()}`,
+			},
+		});
+	}
 
 	if (input.description) {
 		assertions.push({

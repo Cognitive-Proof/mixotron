@@ -307,6 +307,16 @@ export const manifestRouter = createTRPCRouter({
 						relationship: z.enum(["parentOf", "componentOf", "inputTo"]),
 					}),
 				),
+				// Ingredients with no known C2PA manifest — e.g. sample hashes a DAW
+				// sent that don't match anything in the verified-manifest store. See
+				// HashOnlyIngredientInput.
+				hashOnlyIngredients: z.array(
+					z.object({
+						name: z.string().min(1),
+						format: z.string().min(1),
+						relationship: z.enum(["parentOf", "componentOf", "inputTo"]),
+					}),
+				),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
@@ -351,6 +361,7 @@ export const manifestRouter = createTRPCRouter({
 				actions: input.actions,
 				aiDisclosure: input.aiDisclosure,
 				profile,
+				hashOnlyIngredients: input.hashOnlyIngredients,
 			});
 
 			const verifiedAt = new Date().toISOString();
@@ -452,6 +463,9 @@ export const manifestRouter = createTRPCRouter({
 				actions: input.actions,
 				aiDisclosure: input.aiDisclosure,
 				profile,
+				// The ICA path can't carry ingredients at all (see SignRequest.identity's
+				// doc comment) — file-based or hash-only, both are always empty here.
+				hashOnlyIngredients: [],
 			});
 
 			const roles =
