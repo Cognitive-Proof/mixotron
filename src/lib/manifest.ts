@@ -50,6 +50,32 @@ export function detectVerifyFormat(
 	return EXTENSION_TO_FORMAT[ext] ?? null;
 }
 
+const FORMAT_TO_EXTENSION: Record<SupportedVerifyFormat, string> = {
+	"application/pdf": "pdf",
+	"image/jpeg": "jpg",
+	"image/png": "png",
+	"image/svg+xml": "svg",
+	"image/x-adobe-dng": "dng",
+	jsonc: "json",
+	xml: "xml",
+	md: "md",
+	"audio/mpeg": "mp3",
+	"audio/wav": "wav",
+	"audio/flac": "flac",
+	"audio/midi": "mid",
+};
+
+/** The inverse of detectVerifyFormat — for naming a file from a stored
+ * content type rather than guessing from an existing name. Falls back to
+ * "bin" for a content type outside SUPPORTED_VERIFY_FORMATS rather than
+ * guessing wrong (see downloadUpload in link.ts, which hardcoded ".wav"
+ * regardless of the actual upload's content type until this existed). */
+export function extensionForFormat(contentType: string): string {
+	return (
+		(FORMAT_TO_EXTENSION as Record<string, string>)[contentType] ?? "bin"
+	);
+}
+
 export const MANIFEST_STATUS_VALUES = [
 	"verified",
 	"unverified",
