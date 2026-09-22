@@ -22,6 +22,7 @@ export default function LinkPage() {
 	const [product, setProduct] = useState<LinkProduct>("audacity");
 	const [justCreated, setJustCreated] = useState<string | null>(null);
 	const [copied, setCopied] = useState(false);
+	const [urlCopied, setUrlCopied] = useState(false);
 
 	// Read after mount rather than at render time so server and first-client
 	// render match (no window on the server) — the endpoint field just shows
@@ -37,6 +38,7 @@ export default function LinkPage() {
 		onSuccess: async (result) => {
 			setJustCreated(result.token);
 			setCopied(false);
+			setUrlCopied(false);
 			await utils.link.list.invalidate();
 		},
 	});
@@ -103,9 +105,31 @@ export default function LinkPage() {
 				{justCreated && (
 					<div className="field" style={{ marginTop: "1rem" }}>
 						<span className="field-hint">
+							Endpoint URL — paste this into{" "}
+							{LINK_PRODUCT_LABELS[product]}&apos;s Mix-O-Tron export
+							settings, alongside the token below.
+						</span>
+						<div style={{ display: "flex", gap: "0.6rem" }}>
+							<input readOnly type="text" value={window.location.origin} />
+							<button
+								className="btn btn-ghost btn-sm"
+								onClick={async () => {
+									await navigator.clipboard.writeText(
+										window.location.origin,
+									);
+									setUrlCopied(true);
+								}}
+								type="button"
+							>
+								{urlCopied ? "Copied" : "Copy"}
+							</button>
+						</div>
+
+						<span
+							className="field-hint"
+							style={{ marginTop: "0.8rem", display: "block" }}
+						>
 							Copy this token now — you won&apos;t be able to see it again.
-							Paste it into {LINK_PRODUCT_LABELS[product]}&apos;s Mix-O-Tron
-							export settings.
 						</span>
 						<div style={{ display: "flex", gap: "0.6rem" }}>
 							<input readOnly type="text" value={justCreated} />

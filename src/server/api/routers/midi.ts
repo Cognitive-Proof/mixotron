@@ -72,6 +72,7 @@ export const midiRouter = createTRPCRouter({
 					"http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation",
 				actions: [],
 				aiDisclosure: null,
+				hashOnlyIngredients: [],
 				profile: null,
 				ddex: null,
 			});
