@@ -56,26 +56,49 @@ src/
                               licensing, provenance, profiles, trust, open-source,
                               architecture) plus the nav's AuthButton
     page.tsx                 Marketing site (/)
+    info/                     Music Guidance docs, including the /info/midi
+                              Tone.js arranger that exports a signed .mid
+    walkthrough/              Guided, no-login demo (Rights Holder audience;
+                              others route to an "in progress" placeholder)
+                              and the standalone /walkthrough/validator
     dashboard/                Authenticated app
       layout.tsx               Session gate — redirects to "/" if signed out
       page.tsx                 Overview; redirects to createProfile if no profiles exist
-      profile/                 List, create, and edit creator profiles
+      profile/                 List, create, and edit creator profiles (MongoDB-backed)
       author/                  Select a profile, describe a release, drop media,
-                                "produce" a Content Credential
+                                sign and embed a real C2PA manifest
+      verify/                  Inspect a file's manifest, CAWG identity, DDEX
+                                assertions, provenance graph, and trust-registry status
+      sign/                    WebAuthn/PRF device-key signing for recognized
+                                external requests (trust-registry enrollment, key-linking)
+      watermark/               Embed/inspect an audiowmark watermark derived
+                                from a manifest's activeManifestId
+      link/                    Issue upload tokens so external tools (openDAW,
+                                Audacity) can push media straight into the Author flow
   server/
     better-auth/              better-auth config, server session helper, React client
     db/mongo.ts                MongoDB client singleton
-    api/                       tRPC routers
+    api/                       tRPC routers (profile, manifest, watermark, link, midi)
   styles/globals.css          Design tokens (light/dark) and all component styles
 ```
 
+## Known features
+
+What's actually implemented and working, as opposed to stubbed or aspirational:
+
+- **Authoring produces real, signed C2PA manifests.** `/dashboard/author` builds a manifest via `c2pa-rs-javascript-library` (title/description, creation origin, IPTC digital source type, `c2pa.actions`, AI-disclosure fields, up to 20 file or hash-only ingredients, optional DDEX release metadata) and embeds it in the uploaded file — nothing is faked.
+- **Profiles are MongoDB-backed**, scoped to the signed-in account via tRPC (`profile.create`/`list`/`byId`), not `localStorage`.
+- **Verification is real.** `/dashboard/verify` and the public `/walkthrough/validator` parse an uploaded file's manifest, CAWG identity, and DDEX assertions, render the provenance graph, and perform live TRQP trust-registry lookups (the page is explicit that identity checks hit Mix-O-Tron's own test infrastructure, not a production identity registry).
+- **Device-key signing via WebAuthn/PRF.** `/dashboard/sign` recognizes and counter-signs two specific external request types — Governorator trust-registry enrollment and DIDsmith key-linking — and deliberately refuses anything it doesn't recognize.
+- **Watermarking** (`/dashboard/watermark`) embeds and recovers an audiowmark watermark derived from a manifest's `activeManifestId`, with a DB record kept for recovery.
+- **"Link" upload tokens** let external tools (e.g. openDAW, Audacity) push a file and ingredient hashes straight into Mix-O-Tron via a bearer-token endpoint (`/api/link/upload`), landing on a page that feeds directly into the Author flow.
+- **The MIDI arranger** (`/info/midi`) is a working Tone.js step sequencer that exports a real `.mid` file with a signed C2PA manifest embedded in it.
+- **The Rights Holder walkthrough** (`/walkthrough/rights-holder`) is a complete guided demo (verify → add/update manifest) with no login required.
+
 ## Known gaps
 
-This is a working scaffold, not a finished product. Notably:
-
-- **Dashboard profiles are stored in `localStorage`**, not the database — they're per-browser and not tied to the signed-in account. See `src/app/dashboard/_lib/profile-store.tsx`.
-- **Authoring doesn't actually produce anything.** The "Produce Content Credential" flow on `/dashboard/author` fakes a result (a random manifest ID) — no C2PA manifest is created and nothing is signed.
 - **GitHub OAuth isn't wired up.** The env vars exist but `config.ts` only enables email/password.
+- **Only the Rights Holder walkthrough audience is built out.** Recording Creator, Sample Provider, and Music Catalogue Platform all currently route to an "in progress" placeholder.
 - **Sign-O-Tron and the trust registry** (described on the marketing site) are separate services this project doesn't yet include.
 
 ## Learn more
